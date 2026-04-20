@@ -1,567 +1,645 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
-const RANKS = [
-  { tier: "Iron", divisions: ["I","II","III"], color: "#8A9099", glow: "#6B7280", icon: "⬡" },
-  { tier: "Bronze", divisions: ["I","II","III"], color: "#CD7F32", glow: "#B8651A", icon: "⬡" },
-  { tier: "Silver", divisions: ["I","II","III"], color: "#C0C0C0", glow: "#A8A8A8", icon: "⬡" },
-  { tier: "Gold", divisions: ["I","II","III"], color: "#FFD700", glow: "#E6C200", icon: "⬡" },
-  { tier: "Platinum", divisions: ["I","II","III"], color: "#00CED1", glow: "#00A8AB", icon: "⬡" },
-  { tier: "Diamond", divisions: ["I","II","III"], color: "#B9F2FF", glow: "#7DD3FC", icon: "⬡" },
-  { tier: "Ascendant", divisions: ["I","II","III"], color: "#4ADE80", glow: "#22C55E", icon: "⬡" },
-  { tier: "Immortal", divisions: ["I","II","III"], color: "#FF4655", glow: "#E11D48", icon: "⬡" },
-  { tier: "Radiant", divisions: [""], color: "#FFFBAF", glow: "#FCD34D", icon: "✦" },
+const TIERS = [
+  { name:"Iron",      color:"#9CA3AF", glow:"#6B7280", bg:"#111318", emoji:"🔩" },
+  { name:"Bronze",    color:"#CD7F32", glow:"#A0522D", bg:"#1A1208", emoji:"🥉" },
+  { name:"Silver",    color:"#E2E8F0", glow:"#94A3B8", bg:"#13141A", emoji:"⚔️" },
+  { name:"Gold",      color:"#FBBF24", glow:"#D97706", bg:"#1A1600", emoji:"👑" },
+  { name:"Platinum",  color:"#67E8F9", glow:"#0891B2", bg:"#061A1E", emoji:"💎" },
+  { name:"Diamond",   color:"#C4B5FD", glow:"#7C3AED", bg:"#110A22", emoji:"💠" },
+  { name:"Ascendant", color:"#4ADE80", glow:"#16A34A", bg:"#081A0D", emoji:"🌿" },
+  { name:"Immortal",  color:"#FB7185", glow:"#E11D48", bg:"#1A0608", emoji:"☠️" },
+  { name:"Radiant",   color:"#FEF08A", glow:"#CA8A04", bg:"#1A1600", emoji:"✦"  },
 ];
 
-const CATEGORIES = [
-  { id: "fitness", name: "Fitness & Health", emoji: "💪", color: "#EF4444", tasks: ["Morning workout (30 min)","Drink 8 glasses of water","Sleep 7-8 hours","10,000 steps","Meal prep for the day","Stretch / mobility work","No junk food today"] },
-  { id: "mindset", name: "Mental Mastery", emoji: "🧠", color: "#8B5CF6", tasks: ["Meditate (10 min)","Journaling","Read for 30 min","Practice gratitude","Digital detox (1 hr)","Learn something new","Affirmations"] },
-  { id: "career", name: "Career & Skills", emoji: "🚀", color: "#3B82F6", tasks: ["Deep work block (2 hrs)","Learn a new skill (30 min)","Network with 1 person","Complete a project task","Review goals","Write / create content","Attend a course"] },
-  { id: "social", name: "Relationships", emoji: "❤️", color: "#EC4899", tasks: ["Call a family member","Do something kind","Spend quality time with a loved one","Resolve a conflict","Make a new friend","Express appreciation","Avoid drama"] },
-  { id: "finance", name: "Finance & Growth", emoji: "💰", color: "#10B981", tasks: ["Track expenses","No unnecessary spending","Read financial news","Invest / save today","Review budget","Develop a side income idea","Cut one subscription"] },
-  { id: "creativity", name: "Creativity & Flow", emoji: "🎨", color: "#F59E0B", tasks: ["Create something today","Practice a hobby","Explore a new idea","Write/draw/make music","Solve a puzzle","Brainstorm session","Do something spontaneous"] },
+// Iron 1, Iron 2, Iron 3, Bronze 1 ... Radiant
+const ALL_RANKS = TIERS.flatMap(t =>
+  t.name === "Radiant"
+    ? [{ full:"Radiant", tier:t, div:0 }]
+    : [1,2,3].map(d => ({ full:`${t.name} ${d}`, tier:t, div:d }))
+);
+
+const RANK_COUNT = ALL_RANKS.length; // 25
+
+// Difficulty: each tier index 0-8 => Iron...Radiant
+const DIFF = [1.0, 1.1, 1.25, 1.4, 1.6, 1.85, 2.2, 2.7, 3.3];
+
+const CATS = [
+  { id:"fitness",    name:"Fitness",       color:"#F87171", emoji:"💪" },
+  { id:"mindset",    name:"Mindset",       color:"#A78BFA", emoji:"🧠" },
+  { id:"career",     name:"Career",        color:"#60A5FA", emoji:"🚀" },
+  { id:"social",     name:"Social",        color:"#F472B6", emoji:"❤️" },
+  { id:"finance",    name:"Finance",       color:"#34D399", emoji:"💰" },
+  { id:"creative",   name:"Creativity",    color:"#FBBF24", emoji:"🎨" },
 ];
 
-const ALL_TIER_NAMES = RANKS.flatMap(r => r.divisions[0] === "" ? [r.tier] : r.divisions.map(d => `${r.tier} ${d}`));
+const ALL_SIDE_QUESTS = [
+  { id:"sq1", text:"Wake up before 6 AM",       rr:8,  emoji:"🌅" },
+  { id:"sq2", text:"No phone first 30 min",     rr:6,  emoji:"📵" },
+  { id:"sq3", text:"Cold shower",               rr:10, emoji:"🚿" },
+  { id:"sq4", text:"20-min outdoor walk",       rr:7,  emoji:"🌿" },
+  { id:"sq5", text:"Zero junk food",            rr:9,  emoji:"🍎" },
+  { id:"sq6", text:"Learn one new thing",       rr:8,  emoji:"📚" },
+  { id:"sq7", text:"Do one scary thing",        rr:12, emoji:"⚡" },
+  { id:"sq8", text:"Help someone today",        rr:7,  emoji:"🤝" },
+  { id:"sq9", text:"Write in a journal",        rr:6,  emoji:"📓" },
+  { id:"sq10",text:"Drink 3L of water",         rr:7,  emoji:"💧" },
+];
 
-function getRankInfo(totalRR) {
-  const rr = Math.max(0, totalRR);
-  if (rr >= ALL_TIER_NAMES.length * 100 - 100) return { tierName: "Radiant", rr: 100, tierIndex: ALL_TIER_NAMES.length - 1 };
-  const tierIndex = Math.min(Math.floor(rr / 100), ALL_TIER_NAMES.length - 1);
-  return { tierName: ALL_TIER_NAMES[tierIndex], rr: rr % 100, tierIndex };
+const KEY = "liferank_v4";
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+const save = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch {} };
+const todayStr = () => new Date().toISOString().split("T")[0];
+const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+const toRgba = (hex,a) => { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return `rgba(${r},${g},${b},${a})`; };
+
+function computeRR(pct, tierIdx, streakDays, bonus) {
+  let base;
+  if      (pct >= 1.0) base = ri(20,30);
+  else if (pct >= 0.8) base = ri(13,22);
+  else if (pct >= 0.6) base = ri(5,13);
+  else if (pct >= 0.4) base = -ri(5,14);
+  else if (pct >= 0.2) base = -ri(12,22);
+  else                  base = -ri(18,30);
+
+  const diff = DIFF[Math.min(tierIdx, 8)];
+  if (tierIdx >= 6) {
+    // Ascendant+: gains gated by 14-day streak, losses amplified
+    if (base > 0) {
+      const gate = Math.min(streakDays / 14, 1);
+      base = Math.round(base * gate * (1 / diff) * 1.4);
+    } else {
+      base = Math.round(base * diff);
+    }
+  }
+
+  base += bonus;
+  return Math.max(-30, Math.min(30, base));
 }
 
-function getRankData(tierName) {
-  const tierParts = tierName.split(" ");
-  const tier = tierParts[0];
-  return RANKS.find(r => r.tier === tier) || RANKS[0];
-}
+export default function App() {
+  const st = load();
 
-function isAscendantOrAbove(tierName) {
-  const ascIdx = ALL_TIER_NAMES.indexOf("Ascendant I");
-  const idx = ALL_TIER_NAMES.indexOf(tierName);
-  return idx >= ascIdx;
-}
+  const [phase,          setPhase]          = useState(st?.phase || "setup");
+  const [screen,         setScreen]         = useState("home");
+  const [tasks,          setTasks]          = useState(st?.tasks || []);
+  const [newText,        setNewText]        = useState("");
+  const [newCat,         setNewCat]         = useState("fitness");
+  const [rankIdx,        setRankIdx]        = useState(st?.rankIdx ?? 0);
+  const [rrNow,          setRrNow]          = useState(st?.rrNow ?? 0);
+  const [history,        setHistory]        = useState(st?.history || []);
+  const [timerEnd,       setTimerEnd]       = useState(st?.timerEnd || null);
+  const [timerActive,    setTimerActive]    = useState(st?.timerActive || false);
+  const [timeLeft,       setTimeLeft]       = useState(0);
+  const [doneTasks,      setDoneTasks]      = useState(st?.doneTasks || {});
+  const [doneSQ,         setDoneSQ]         = useState(st?.doneSQ || {});
+  const [dayLocked,      setDayLocked]      = useState(st?.dayLocked || false);
+  const [streak,         setStreak]         = useState(st?.streak || 0);
+  const [streakDays,     setStreakDays]      = useState(st?.streakDays || 0);
+  const [sideQuests,     setSideQuests]     = useState(st?.sideQuests || []);
+  const [bonusMission,   setBonusMission]   = useState(st?.bonusMission || null);
+  const [bonusDone,      setBonusDone]      = useState(st?.bonusDone || false);
+  const [aiMsg,          setAiMsg]          = useState(st?.aiMsg || "");
+  const [aiLoading,      setAiLoading]      = useState(false);
+  const [popup,          setPopup]          = useState(null);
+  const [coachQ,         setCoachQ]         = useState("");
 
-const DEFAULT_TASKS = CATEGORIES.flatMap(c => c.tasks.slice(0,3).map(t => ({ id: `${c.id}_${t}`, text: t, category: c.id, isCustom: false })));
+  const rank = ALL_RANKS[rankIdx];
+  const tier = rank.tier;
+  const tierIdx = TIERS.findIndex(t => t.name === tier.name);
+  const C = tier.color;
 
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
+  const p = useCallback((patch={}) => {
+    const base = load()||{};
+    save({...base, phase,tasks,rankIdx,rrNow,history,timerEnd,timerActive,doneTasks,doneSQ,dayLocked,streak,streakDays,sideQuests,bonusMission,bonusDone,aiMsg,...patch});
+  },[phase,tasks,rankIdx,rrNow,history,timerEnd,timerActive,doneTasks,doneSQ,dayLocked,streak,streakDays,sideQuests,bonusMission,bonusDone,aiMsg]);
 
-const STORAGE_KEY = "liferank_v2";
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return null;
-}
-
-function saveState(state) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
-}
-
-const today = () => new Date().toISOString().split("T")[0];
-
-export default function LifeRankApp() {
-  const [screen, setScreen] = useState("home");
-  const [totalRR, setTotalRR] = useState(0);
-  const [tasks, setTasks] = useState(DEFAULT_TASKS);
-  const [completedToday, setCompletedToday] = useState({});
-  const [lastDate, setLastDate] = useState(today());
-  const [history, setHistory] = useState([]);
-  const [bonusMission, setBonusMission] = useState(null);
-  const [bonusDone, setBonusDone] = useState(false);
-  const [aiMsg, setAiMsg] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState(["fitness","mindset","career"]);
-  const [newTaskText, setNewTaskText] = useState("");
-  const [newTaskCat, setNewTaskCat] = useState("fitness");
-  const [streak, setStreak] = useState(0);
-  const [streakDays, setStreakDays] = useState(0);
-  const [showRRGain, setShowRRGain] = useState(null);
-  const [dailyLocked, setDailyLocked] = useState(false);
-  const [tab, setTab] = useState("tasks");
+  // Tick
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (timerActive && timerEnd) {
+        const left = Math.max(0, timerEnd - Date.now());
+        setTimeLeft(left);
+        if (left === 0 && !dayLocked) handleEnd(true);
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [timerActive, timerEnd, dayLocked]);
 
   useEffect(() => {
-    const s = loadState();
-    if (s) {
-      setTotalRR(s.totalRR ?? 0);
-      setTasks(s.tasks ?? DEFAULT_TASKS);
-      setSelectedCategories(s.selectedCategories ?? ["fitness","mindset","career"]);
-      setHistory(s.history ?? []);
-      setStreak(s.streak ?? 0);
-      setStreakDays(s.streakDays ?? 0);
-      const d = s.lastDate ?? today();
-      setLastDate(d);
-      if (d === today()) {
-        setCompletedToday(s.completedToday ?? {});
-        setBonusDone(s.bonusDone ?? false);
-        setDailyLocked(s.dailyLocked ?? false);
-      } else {
-        setCompletedToday({});
-        setBonusDone(false);
-        setDailyLocked(false);
-      }
+    if (phase === "rank") {
+      if (!bonusMission) fetchBonus();
+      if (!sideQuests.length) pickSQ();
     }
-    fetchBonusMission();
-  }, []);
+  }, [phase]);
 
-  const persist = useCallback((patch) => {
-    const base = loadState() || {};
-    const next = { ...base, ...patch, lastDate: today() };
-    saveState(next);
-  }, []);
+  function pickSQ() {
+    const sq = [...ALL_SIDE_QUESTS].sort(()=>Math.random()-0.5).slice(0,3);
+    setSideQuests(sq); p({sideQuests:sq});
+  }
 
-  async function fetchBonusMission() {
-    setAiLoading(true);
+  async function fetchBonus() {
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: "You are a life coach AI for a gamified self-improvement app. Respond ONLY with valid JSON. No markdown, no backticks.",
-          messages: [{
-            role: "user",
-            content: `Generate a daily bonus mission for a life improvement challenge. Return JSON: { "title": "short mission name", "description": "1 sentence what to do", "category": "fitness|mindset|career|social|finance|creativity", "bonusRR": 15, "difficulty": "easy|medium|hard", "tip": "motivational one-liner" }`
-          }]
+      const r = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:300,
+          system:"Respond ONLY with valid JSON, no backticks, no markdown.",
+          messages:[{role:"user",content:`Create a daily bonus mission JSON for a gamified life-improvement app. Format: {"title":"short name","description":"one sentence task","bonusRR":12,"tip":"short motivational quote"}`}]
         })
       });
       const d = await r.json();
-      const text = d.content?.map(x => x.text || "").join("") || "{}";
-      const clean = text.replace(/```json|```/g,"").trim();
-      const mission = JSON.parse(clean);
-      setBonusMission(mission);
+      const txt = d.content?.map(x=>x.text||"").join("").replace(/```json|```/g,"").trim();
+      const m = JSON.parse(txt);
+      setBonusMission(m); p({bonusMission:m});
     } catch {
-      setBonusMission({ title: "The Discipline Challenge", description: "Do one thing today that your future self will thank you for.", category: "mindset", bonusRR: 15, difficulty: "medium", tip: "Consistency is the mother of mastery." });
+      const m={title:"Iron Will Protocol",description:"Do one task today that your future self will thank you for.",bonusRR:12,tip:"Discipline is choosing between what you want now and what you want most."};
+      setBonusMission(m); p({bonusMission:m});
+    }
+  }
+
+  async function callCoach(ctx) {
+    setAiLoading(true);
+    const done = tasks.filter(t=>doneTasks[t.id]).length;
+    const sys = `You are an elite Valorant-style life coach AI. Be intense, data-driven, direct, use gaming lingo. Max 90 words. Player rank: ${rank.full}. Streak: ${streakDays} days. Tasks today: ${done}/${tasks.length}. Recent history (last 5 days): ${JSON.stringify(history.slice(0,5))}. Difficulty tier: ${DIFF[tierIdx]}x.`;
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:500,
+          system:sys, messages:[{role:"user",content:ctx}]
+        })
+      });
+      const d = await r.json();
+      const msg = d.content?.map(x=>x.text||"").join("")||"Stay locked in. Every day is ranked.";
+      setAiMsg(msg); p({aiMsg:msg});
+    } catch {
+      setAiMsg("Network issue. But your grind doesn't stop. Lock in and execute.");
     }
     setAiLoading(false);
   }
 
-  async function getAICoach(prompt) {
-    setAiLoading(true);
-    setAiMsg("");
-    try {
-      const { tierName } = getRankInfo(totalRR);
-      const isAsc = isAscendantOrAbove(tierName);
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are an intense Valorant-style life coach AI. The user is currently rank ${tierName}. ${isAsc ? "They are in Ascendant+ — be DEMANDING, tell them the grind is harder now, more is expected." : "Be encouraging but push them."} Keep responses under 80 words. Be hype, direct, use gaming language occasionally.`,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const d = await r.json();
-      setAiMsg(d.content?.map(x => x.text || "").join("") || "Keep grinding!");
-    } catch {
-      setAiMsg("Keep grinding. Every task completed is RR in the bank. Don't let your rank decay!");
-    }
-    setAiLoading(false);
+  function startDay() {
+    const end = Date.now() + 24*60*60*1000;
+    setTimerActive(true); setTimerEnd(end);
+    setDoneTasks({}); setDoneSQ({});
+    setDayLocked(false); setBonusDone(false);
+    pickSQ(); fetchBonus();
+    p({timerActive:true,timerEnd:end,doneTasks:{},doneSQ:{},dayLocked:false,bonusDone:false});
+    setScreen("home");
+    callCoach("I just started a new ranked day. Hype me up and tell me what to focus on.");
   }
 
-  const activeTasks = tasks.filter(t => selectedCategories.includes(t.category));
-  const completedCount = activeTasks.filter(t => completedToday[t.id]).length;
-  const totalCount = activeTasks.length;
-  const pct = totalCount > 0 ? completedCount / totalCount : 0;
+  function handleEnd(auto=false) {
+    if (dayLocked) return;
+    const done = tasks.filter(t=>doneTasks[t.id]).length;
+    const total = tasks.length;
+    const pct = total>0 ? done/total : 0;
+    const sqBonus = sideQuests.filter(q=>doneSQ[q.id]).reduce((s,q)=>s+q.rr,0);
+    const bBonus = bonusDone&&bonusMission ? (bonusMission.bonusRR||12) : 0;
+    const rr = computeRR(pct, tierIdx, streakDays, sqBonus+bBonus);
 
-  function toggleTask(id) {
-    if (dailyLocked) return;
-    setCompletedToday(prev => {
-      const next = { ...prev, [id]: !prev[id] };
-      persist({ completedToday: next });
-      return next;
-    });
+    const oldIdx = rankIdx;
+    let newIdx = rankIdx, newRR = rrNow + rr;
+    while (newRR >= 100 && newIdx < RANK_COUNT-1) { newRR -= 100; newIdx++; }
+    while (newRR < 0   && newIdx > 0)             { newIdx--;     newRR += 100; }
+    newRR = Math.max(0, Math.min(99, newRR));
+
+    const promoted = newIdx > oldIdx;
+    const newStreak = rr>0 ? streak+1 : 0;
+    const newSD     = rr>0 ? streakDays+1 : 0;
+    const entry = { date:todayStr(), rr, from:ALL_RANKS[oldIdx].full, to:ALL_RANKS[newIdx].full, done, total, pct:Math.round(pct*100) };
+    const newHist = [entry,...history].slice(0,60);
+
+    setRankIdx(newIdx); setRrNow(newRR); setHistory(newHist);
+    setStreak(newStreak); setStreakDays(newSD);
+    setDayLocked(true); setTimerActive(false); setTimeLeft(0);
+    p({rankIdx:newIdx,rrNow:newRR,history:newHist,streak:newStreak,streakDays:newSD,dayLocked:true,timerActive:false});
+
+    if (promoted) setTimeout(()=>setPopup({type:"promote",rank:ALL_RANKS[newIdx]}), 400);
+    else { setPopup({type:"rr",rr,col:rr>0?"#4ADE80":"#F87171"}); setTimeout(()=>setPopup(null),3800); }
+
+    const ctx = rr>0
+      ? `Day ended. Gained ${rr} RR. ${done}/${total} tasks. Now ${ALL_RANKS[newIdx].full}. ${promoted?"JUST PROMOTED!":""} Analyze.`
+      : `Bad day. Lost ${Math.abs(rr)} RR. ${done}/${total} tasks. Fell to ${ALL_RANKS[newIdx].full}. Brutal honest feedback.`;
+    setTimeout(()=>callCoach(ctx), 900);
   }
 
-  function lockAndCalculateRR() {
-    if (dailyLocked) return;
-    const { tierName } = getRankInfo(totalRR);
-    const isAsc = isAscendantOrAbove(tierName);
-    let base;
-    const roll = Math.random();
-    if (pct === 1) base = 18 + Math.floor(Math.random() * 12);
-    else if (pct >= 0.8) base = 12 + Math.floor(Math.random() * 10);
-    else if (pct >= 0.6) base = 5 + Math.floor(Math.random() * 8);
-    else if (pct >= 0.4) base = -(8 + Math.floor(Math.random() * 10));
-    else if (pct >= 0.2) base = -(12 + Math.floor(Math.random() * 12));
-    else base = -(18 + Math.floor(Math.random() * 12));
+  const doneCnt   = tasks.filter(t=>doneTasks[t.id]).length;
+  const pctDone   = tasks.length>0 ? doneCnt/tasks.length : 0;
+  const sqDone    = sideQuests.filter(q=>doneSQ[q.id]).length;
 
-    if (bonusDone && bonusMission) {
-      base += bonusMission.bonusRR || 10;
-    }
+  // ── STYLES ───────────────────────────────────────────────────
+  const CSS = `
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Barlow+Condensed:wght@300;400;600;700&display=swap');
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    body { background:#06060E; }
+    .app { min-height:100vh; background:#06060E; font-family:'Barlow Condensed',sans-serif; color:#E2E8F0; overflow-x:hidden; }
+    .orb { font-family:'Orbitron',monospace !important; }
+    .screen { max-width:480px; margin:0 auto; padding-bottom:92px; }
+    input,select { background:#0C0C18; border:1px solid #1E1E30; border-radius:10px; padding:11px 14px; color:#E2E8F0; font-family:'Barlow Condensed',sans-serif; font-size:15px; width:100%; transition:all 0.2s; }
+    input:focus, select:focus { outline:none; border-color:${toRgba(C,0.6)}; box-shadow:0 0 0 3px ${toRgba(C,0.12)}; }
+    button { cursor:pointer; font-family:'Barlow Condensed',sans-serif; transition:all 0.18s; }
+    button:active { transform:scale(0.97); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes scaleIn { from{opacity:0;transform:scale(0.6)} to{opacity:1;transform:scale(1)} }
+    @keyframes glow { 0%,100%{box-shadow:0 0 8px ${toRgba(C,0.3)}} 50%{box-shadow:0 0 25px ${toRgba(C,0.65)}} }
+    @keyframes rankBounce { 0%{transform:scale(1)} 40%{transform:scale(1.3) rotate(-5deg)} 70%{transform:scale(0.95)} 100%{transform:scale(1)} }
+    @keyframes confettiFall { from{opacity:1;transform:translateY(0) rotate(0)} to{opacity:0;transform:translateY(200px) rotate(720deg)} }
+    @keyframes rrFloat { 0%{opacity:0;transform:translate(-50%,-50%) scale(0.4)} 15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)} 65%{opacity:1;transform:translate(-50%,-60%) scale(1)} 100%{opacity:0;transform:translate(-50%,-90%) scale(0.85)} }
+    @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+    .card-hover { transition:all 0.18s; }
+    .card-hover:hover { transform:translateX(3px); }
+    .btn-hover:hover { filter:brightness(1.12); transform:translateY(-1px); }
+    ::-webkit-scrollbar { width:4px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:${toRgba(C,0.3)}; border-radius:2px; }
+    .shimmer-text { background:linear-gradient(90deg,${C} 0%,#fff 50%,${C} 100%); background-size:200%; -webkit-background-clip:text; -webkit-text-fill-color:transparent; animation:shimmer 3s linear infinite; }
+  `;
 
-    if (isAsc) {
-      if (streakDays >= 14) {
-        base = Math.round(base * 0.9);
-      } else {
-        if (base > 0) base = Math.round(base * 0.6);
-        else base = Math.round(base * 1.5);
-      }
-    }
+  // reusable dim vars
+  const cardBase = { background:"#0C0C18", border:`1px solid #1A1A28`, borderRadius:14, padding:"16px" };
+  const sectionLabel = { fontSize:10, letterSpacing:4, color:"#3A3A50", textTransform:"uppercase", marginBottom:10 };
 
-    base = Math.max(-30, Math.min(30, base));
-    const newTotal = Math.max(0, totalRR + base);
+  // ── SETUP SCREEN ─────────────────────────────────────────────
+  const Setup = (
+    <div style={{padding:"0 18px"}}>
+      <div style={{textAlign:"center",padding:"44px 0 28px"}}>
+        <div className="orb shimmer-text" style={{fontSize:36,fontWeight:900,letterSpacing:6}}>LIFERANK</div>
+        <div style={{fontSize:13,color:"#3A3A50",letterSpacing:4,marginTop:6}}>RANKED SELF-IMPROVEMENT</div>
+        <div style={{marginTop:22,padding:"14px 18px",background:toRgba(C,0.07),border:`1px solid ${toRgba(C,0.18)}`,borderRadius:14,fontSize:14,color:"#888",lineHeight:1.8,textAlign:"left"}}>
+          <span style={{color:C,fontWeight:700}}>Before entering rank,</span> build your task list. Only tasks YOU create count toward your RR. Make them realistic — you'll do these every single day.
+        </div>
+      </div>
 
-    const newStreakDays = base > 0 ? streakDays + 1 : 0;
-    const newStreak = base > 0 ? streak + 1 : 0;
+      <div style={sectionLabel}>Your Daily Tasks ({tasks.length})</div>
+      {tasks.length===0 && (
+        <div style={{textAlign:"center",padding:"18px",color:"#2A2A40",fontSize:14,border:"1px dashed #1A1A28",borderRadius:12,marginBottom:14}}>
+          No tasks yet — add at least one to begin.
+        </div>
+      )}
+      {tasks.map(t => {
+        const cat = CATS.find(c=>c.id===t.cat);
+        return (
+          <div key={t.id} className="card-hover" style={{...cardBase,marginBottom:7,display:"flex",alignItems:"center",gap:10,padding:"11px 14px"}}>
+            <span style={{fontSize:18}}>{cat?.emoji}</span>
+            <span style={{flex:1,fontSize:15,color:"#C0C8E0"}}>{t.text}</span>
+            <span style={{fontSize:11,color:cat?.color,background:toRgba(cat?.color||"#555",0.12),padding:"2px 8px",borderRadius:10}}>{cat?.name}</span>
+            <button onClick={()=>{const n=tasks.filter(x=>x.id!==t.id);setTasks(n);p({tasks:n});}} style={{background:"none",border:"none",color:"#2A2A40",fontSize:20,lineHeight:1,padding:"0 4px"}}>×</button>
+          </div>
+        );
+      })}
 
-    const entry = {
-      date: today(),
-      rr: base,
-      completed: completedCount,
-      total: totalCount,
-      tier: getRankInfo(totalRR).tierName,
-      newTier: getRankInfo(newTotal).tierName,
-    };
+      <div style={{...cardBase,marginBottom:16,marginTop:14}}>
+        <div style={sectionLabel}>Add New Task</div>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(()=>{if(!newText.trim())return;const t={id:`t${Date.now()}`,text:newText.trim(),cat:newCat};const n=[...tasks,t];setTasks(n);setNewText("");p({tasks:n});})()}  placeholder="What will you do every day?"/>
+          <select value={newCat} onChange={e=>setNewCat(e.target.value)}>
+            {CATS.map(c=><option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+          </select>
+          <button className="btn-hover" onClick={()=>{if(!newText.trim())return;const t={id:`t${Date.now()}`,text:newText.trim(),cat:newCat};const n=[...tasks,t];setTasks(n);setNewText("");p({tasks:n});}} style={{padding:"13px",background:toRgba(C,0.12),border:`1px solid ${toRgba(C,0.3)}`,borderRadius:10,color:C,fontFamily:"'Orbitron',monospace",fontSize:12,letterSpacing:2,fontWeight:700}}>
+            + ADD TASK
+          </button>
+        </div>
+      </div>
 
-    const newHistory = [entry, ...history].slice(0, 30);
+      {tasks.length>0 && (
+        <button className="btn-hover" onClick={()=>{setPhase("rank");p({phase:"rank"});}} style={{width:"100%",padding:"18px",background:`linear-gradient(135deg,${toRgba(C,0.28)},${toRgba(C,0.1)})`,border:`1px solid ${C}`,borderRadius:14,color:C,fontFamily:"'Orbitron',monospace",fontSize:16,fontWeight:900,letterSpacing:5,boxShadow:`0 0 24px ${toRgba(C,0.35)}`}}>
+          ENTER RANKED ▶
+        </button>
+      )}
+    </div>
+  );
 
-    setTotalRR(newTotal);
-    setStreak(newStreak);
-    setStreakDays(newStreakDays);
-    setHistory(newHistory);
-    setDailyLocked(true);
-    setShowRRGain(base);
-
-    persist({
-      totalRR: newTotal,
-      streak: newStreak,
-      streakDays: newStreakDays,
-      history: newHistory,
-      dailyLocked: true,
-      tasks,
-      selectedCategories,
-    });
-
-    const msg = base > 0
-      ? `I completed ${completedCount}/${totalCount} tasks and gained ${base} RR. I'm now ${getRankInfo(newTotal).tierName}. What should I focus on tomorrow?`
-      : `I only completed ${completedCount}/${totalCount} tasks and lost ${Math.abs(base)} RR. I'm ${getRankInfo(newTotal).tierName}. How do I bounce back?`;
-    setTimeout(() => getAICoach(msg), 500);
-  }
-
-  function addCustomTask() {
-    if (!newTaskText.trim()) return;
-    const t = { id: `custom_${Date.now()}`, text: newTaskText.trim(), category: newTaskCat, isCustom: true };
-    const next = [...tasks, t];
-    setTasks(next);
-    setNewTaskText("");
-    persist({ tasks: next });
-  }
-
-  function removeTask(id) {
-    const next = tasks.filter(t => t.id !== id);
-    setTasks(next);
-    persist({ tasks: next });
-  }
-
-  const { tierName, rr, tierIndex } = getRankInfo(totalRR);
-  const rankData = getRankData(tierName);
-  const isAsc = isAscendantOrAbove(tierName);
-  const maxTierIndex = ALL_TIER_NAMES.length - 1;
-
-  const styles = {
-    app: { minHeight: "100vh", background: "#0A0A0F", color: "#E8E8F0", fontFamily: "'Rajdhani', 'Segoe UI', sans-serif", position: "relative", overflow: "hidden" },
-    bg: { position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: `radial-gradient(ellipse at 20% 20%, ${hexToRgba(rankData.color, 0.06)} 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, ${hexToRgba(rankData.glow, 0.04)} 0%, transparent 60%)` },
-    content: { position: "relative", zIndex: 1, maxWidth: 480, margin: "0 auto", padding: "0 0 80px" },
-    header: { padding: "20px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" },
-    logo: { fontSize: 22, fontWeight: 700, letterSpacing: 3, color: rankData.color, textTransform: "uppercase" },
-    rankCard: { margin: "16px", background: "linear-gradient(135deg, #12121A 0%, #1A1A28 100%)", border: `1px solid ${hexToRgba(rankData.color, 0.3)}`, borderRadius: 16, padding: "20px 24px", position: "relative", overflow: "hidden" },
-    rankBadge: { display: "flex", alignItems: "center", gap: 16, marginBottom: 16 },
-    rankIcon: { width: 64, height: 64, borderRadius: "50%", background: `radial-gradient(circle, ${hexToRgba(rankData.color, 0.2)} 0%, ${hexToRgba(rankData.color, 0.05)} 100%)`, border: `2px solid ${rankData.color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 },
-    rankName: { fontSize: 26, fontWeight: 700, color: rankData.color, letterSpacing: 2, textTransform: "uppercase", lineHeight: 1 },
-    rankSub: { fontSize: 13, color: "#888", marginTop: 4, letterSpacing: 1 },
-    rrBar: { height: 6, background: "#1E1E2E", borderRadius: 3, overflow: "hidden", marginTop: 12 },
-    rrFill: { height: "100%", background: `linear-gradient(90deg, ${rankData.color}99, ${rankData.color})`, borderRadius: 3, transition: "width 1s ease", width: `${rr}%` },
-    rrLabel: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "#666", marginTop: 6 },
-    ascWarning: { background: hexToRgba("#4ADE80", 0.1), border: "1px solid #4ADE8044", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#4ADE80", marginTop: 12, display: streakDays < 14 && isAsc ? "block" : "none" },
-    streakBar: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 },
-    nav: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#0D0D15", borderTop: "1px solid #1E1E30", display: "flex", zIndex: 100 },
-    navBtn: (active) => ({ flex: 1, padding: "12px 4px", background: "none", border: "none", color: active ? rankData.color : "#555", fontSize: 10, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, fontFamily: "inherit", letterSpacing: 1, textTransform: "uppercase", transition: "color 0.2s" }),
-    section: { margin: "0 16px 16px" },
-    sectionTitle: { fontSize: 11, letterSpacing: 3, color: "#555", textTransform: "uppercase", marginBottom: 10 },
-    taskCard: (done) => ({ background: done ? "#0D1F0D" : "#12121A", border: `1px solid ${done ? "#22C55E44" : "#1E1E30"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, cursor: dailyLocked ? "default" : "pointer", transition: "all 0.2s", opacity: done ? 0.8 : 1 }),
-    checkbox: (done) => ({ width: 20, height: 20, borderRadius: 4, border: `2px solid ${done ? "#22C55E" : "#333"}`, background: done ? "#22C55E" : "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12 }),
-    taskText: (done) => ({ fontSize: 15, color: done ? "#4ADE80" : "#CCC", textDecoration: done ? "line-through" : "none", flex: 1 }),
-    catDot: (catId) => ({ width: 6, height: 6, borderRadius: "50%", background: CATEGORIES.find(c => c.id === catId)?.color || "#555", flexShrink: 0 }),
-    bigBtn: { width: "100%", padding: "16px", background: `linear-gradient(135deg, ${rankData.color}22, ${rankData.color}11)`, border: `1px solid ${rankData.color}66`, borderRadius: 12, color: rankData.color, fontSize: 16, fontWeight: 700, letterSpacing: 2, cursor: "pointer", fontFamily: "inherit", textTransform: "uppercase", transition: "all 0.2s" },
-    progressRing: { textAlign: "center", marginBottom: 16 },
-    pct: { fontSize: 42, fontWeight: 700, color: rankData.color },
-    bonusCard: { background: "#12121A", border: `1px solid ${hexToRgba("#F59E0B", 0.3)}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16 },
-    aiBox: { background: "#0D0D15", border: "1px solid #1E1E30", borderRadius: 12, padding: "14px 16px", marginTop: 12 },
-    histCard: (rr) => ({ background: "#12121A", border: `1px solid ${rr > 0 ? "#22C55E33" : "#EF444433"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }),
-    input: { background: "#12121A", border: "1px solid #1E1E30", borderRadius: 8, padding: "10px 14px", color: "#E8E8F0", fontSize: 14, fontFamily: "inherit", outline: "none", width: "100%" },
-    select: { background: "#12121A", border: "1px solid #1E1E30", borderRadius: 8, padding: "10px 14px", color: "#E8E8F0", fontSize: 14, fontFamily: "inherit", outline: "none" },
-    catBtn: (active) => ({ padding: "8px 14px", borderRadius: 20, border: `1px solid ${active ? "#555" : "#222"}`, background: active ? "#1E1E30" : "none", color: active ? "#E8E8F0" : "#555", fontSize: 12, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1, transition: "all 0.2s" }),
-    rrPop: { position: "fixed", top: "40%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 200, textAlign: "center", pointerEvents: "none" },
-    removeBtn: { background: "none", border: "none", color: "#333", cursor: "pointer", fontSize: 16, padding: "0 4px", lineHeight: 1 },
+  // ── HOME ─────────────────────────────────────────────────────
+  const fmtTime = ms => {
+    if(!ms||ms<=0) return "00:00:00";
+    const sec=Math.floor(ms/1000),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+    return [h,m,s].map(x=>String(x).padStart(2,"0")).join(":");
   };
 
-  const screens = {
-    home: (
-      <div>
-        <div style={styles.header}>
-          <div style={styles.logo}>LifeRank</div>
-          <div style={{ fontSize: 12, color: "#555", letterSpacing: 2 }}>EPISODE 1</div>
+  const Home = (
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 18px 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <div className="orb" style={{fontSize:22,fontWeight:900,letterSpacing:5,color:C,textShadow:`0 0 20px ${toRgba(C,0.5)}`}}>LIFERANK</div>
+          <div style={{fontSize:9,letterSpacing:5,color:toRgba(C,0.4),marginTop:1}}>EPISODE 1 · SEASON 1</div>
+        </div>
+        {timerActive
+          ? <div className="orb" style={{background:toRgba(C,0.12),border:`1px solid ${toRgba(C,0.3)}`,borderRadius:20,padding:"7px 14px",fontSize:17,fontWeight:700,color:timeLeft<3600000?"#F87171":C,letterSpacing:2,animation:timeLeft<3600000?"pulse 1s infinite":"none"}}>{fmtTime(timeLeft)}</div>
+          : <div style={{fontSize:11,color:"#2A2A40",letterSpacing:2}}>NO ACTIVE TIMER</div>
+        }
+      </div>
+
+      {/* Rank card */}
+      <div style={{margin:"16px 18px",background:tier.bg,border:`1px solid ${toRgba(C,0.28)}`,borderRadius:20,padding:"20px",position:"relative",overflow:"hidden",animation:"glow 4s infinite"}}>
+        <div style={{position:"absolute",inset:0,backgroundImage:`repeating-linear-gradient(60deg,${toRgba(C,0.025)} 0,${toRgba(C,0.025)} 1px,transparent 1px,transparent 40px),repeating-linear-gradient(120deg,${toRgba(C,0.025)} 0,${toRgba(C,0.025)} 1px,transparent 1px,transparent 40px)`,backgroundSize:"40px 70px",pointerEvents:"none"}}/>
+        <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:18,position:"relative"}}>
+          <div style={{width:70,height:70,borderRadius:"50%",background:`radial-gradient(circle,${toRgba(C,0.22)} 0%,transparent 70%)`,border:`2.5px solid ${C}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,boxShadow:`0 0 22px ${toRgba(C,0.45)}`,flexShrink:0}}>{tier.emoji}</div>
+          <div style={{flex:1}}>
+            <div className="orb" style={{fontSize:24,fontWeight:900,color:C,letterSpacing:3,textShadow:`0 0 14px ${toRgba(C,0.4)}`,lineHeight:1}}>{rank.full}</div>
+            <div style={{fontSize:12,color:toRgba(C,0.55),marginTop:5,letterSpacing:2}}>RR {rrNow}/100 · DIFF ×{DIFF[tierIdx].toFixed(1)}</div>
+            {tierIdx>=6 && <div style={{fontSize:11,marginTop:4,color:streakDays>=14?"#4ADE80":"#FBBF24",letterSpacing:1}}>{streakDays>=14?"⚡ STREAK BONUS ACTIVE":`⚠ HARD MODE · ${streakDays}/14d STREAK`}</div>}
+          </div>
+        </div>
+        <div style={{height:9,background:"#0A0A16",borderRadius:5,overflow:"hidden",position:"relative"}}>
+          <div style={{height:"100%",background:`linear-gradient(90deg,${toRgba(C,0.5)},${C})`,borderRadius:5,width:`${rrNow}%`,transition:"width 1.4s cubic-bezier(0.4,0,0.2,1)",boxShadow:`0 0 10px ${C}`}}/>
+        </div>
+        <div className="orb" style={{display:"flex",justifyContent:"space-between",fontSize:10,color:toRgba(C,0.45),marginTop:5}}>
+          <span>{rrNow} RR</span><span>100 RR → PROMOTE</span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,margin:"0 18px 14px"}}>
+        {[["TASKS",`${doneCnt}/${tasks.length}`],["STREAK",`🔥${streak}`],["DAYS",`${history.length}`]].map(([l,v])=>(
+          <div key={l} style={{background:"#0C0C18",border:"1px solid #181828",borderRadius:12,padding:"12px 10px",textAlign:"center"}}>
+            <div className="orb" style={{fontSize:22,fontWeight:700,color:C,lineHeight:1}}>{v}</div>
+            <div style={{fontSize:9,letterSpacing:3,color:"#3A3A50",marginTop:4}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress */}
+      <div style={{...cardBase,margin:"0 18px 14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <span style={{fontSize:10,letterSpacing:4,color:"#3A3A50",textTransform:"uppercase"}}>Daily Progress</span>
+          <span className="orb" style={{fontSize:30,fontWeight:900,color:C}}>{Math.round(pctDone*100)}%</span>
+        </div>
+        <div style={{height:7,background:"#0A0A16",borderRadius:4,overflow:"hidden"}}>
+          <div style={{height:"100%",background:`linear-gradient(90deg,${toRgba(C,0.55)},${C})`,borderRadius:4,width:`${pctDone*100}%`,transition:"width 0.9s ease",boxShadow:`0 0 8px ${C}`}}/>
+        </div>
+        <div style={{fontSize:12,color:"#3A3A50",marginTop:8}}>{pctDone===1?"✓ Maximum RR eligible! Submit now.":pctDone>=0.8?"Almost done — push for 100%":pctDone>=0.5?"Halfway there — keep the momentum":pctDone>0?"You started — now finish.":"Activate timer and begin your tasks"}</div>
+      </div>
+
+      {/* Bonus mission */}
+      {bonusMission && (
+        <div style={{...cardBase,margin:"0 18px 14px",background:"#0E0C00",border:"1px solid #FBBF2430"}}>
+          <div style={{fontSize:9,letterSpacing:4,color:"#FBBF24",marginBottom:7,textTransform:"uppercase"}}>⚡ DAILY BONUS MISSION</div>
+          <div style={{fontSize:17,fontWeight:700,color:"#FEF3C7",marginBottom:4}}>{bonusMission.title}</div>
+          <div style={{fontSize:13,color:"#888",lineHeight:1.6,marginBottom:10}}>{bonusMission.description}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span className="orb" style={{fontSize:14,color:"#FBBF24"}}>+{bonusMission.bonusRR} RR</span>
+            <button onClick={()=>{if(!dayLocked){setBonusDone(true);p({bonusDone:true});}}} style={{padding:"7px 18px",borderRadius:20,border:`1px solid ${bonusDone?"#22C55E44":"#2A2A40"}`,background:bonusDone?toRgba("#22C55E",0.1):"none",color:bonusDone?"#22C55E":"#555",fontSize:13,letterSpacing:1}}>{bonusDone?"✓ Claimed":"Mark Done"}</button>
+          </div>
+          {bonusMission.tip && <div style={{fontSize:11,color:"#444",marginTop:8,fontStyle:"italic"}}>"{bonusMission.tip}"</div>}
+        </div>
+      )}
+
+      {/* Action button */}
+      {!timerActive && !dayLocked
+        ? <button className="btn-hover" onClick={startDay} style={{display:"block",width:"calc(100% - 36px)",margin:"0 18px 14px",padding:"17px",background:`linear-gradient(135deg,${toRgba(C,0.22)},${toRgba(C,0.08)})`,border:`1px solid ${toRgba(C,0.55)}`,borderRadius:14,color:C,fontFamily:"'Orbitron',monospace",fontSize:15,fontWeight:900,letterSpacing:4}}>
+            ▶ START RANKED DAY
+          </button>
+        : timerActive && !dayLocked
+        ? <button className="btn-hover" onClick={()=>handleEnd(false)} style={{display:"block",width:"calc(100% - 36px)",margin:"0 18px 14px",padding:"17px",background:toRgba("#F87171",0.1),border:"1px solid #F8717155",borderRadius:14,color:"#F87171",fontFamily:"'Orbitron',monospace",fontSize:15,fontWeight:900,letterSpacing:3}}>
+            ■ END DAY — SUBMIT RR
+          </button>
+        : <div style={{display:"block",width:"calc(100% - 36px)",margin:"0 18px 14px",padding:"17px",background:"#0C0C18",border:"1px solid #1A1A28",borderRadius:14,color:"#2A2A40",fontFamily:"'Orbitron',monospace",fontSize:13,letterSpacing:3,textAlign:"center"}}>
+            ✓ DAY LOCKED · SEE YOU TOMORROW
+          </div>
+      }
+
+      {/* AI */}
+      {aiLoading && <div style={{textAlign:"center",color:"#3A3A50",fontSize:12,letterSpacing:3,margin:"0 18px"}}>COACH AI PROCESSING...</div>}
+      {aiMsg && (
+        <div style={{...cardBase,margin:"0 18px 14px",background:"#09090F",border:`1px solid ${toRgba(C,0.12)}`}}>
+          <div style={{fontSize:9,letterSpacing:4,color:C,marginBottom:9,textTransform:"uppercase"}}>🤖 Coach AI — Real-time Analysis</div>
+          <div style={{fontSize:15,color:"#A0AEC0",lineHeight:1.8}}>{aiMsg}</div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── TASKS ────────────────────────────────────────────────────
+  const Tasks = (
+    <div>
+      <div style={{padding:"18px 18px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div className="orb" style={{fontSize:20,fontWeight:900,color:C,letterSpacing:4}}>TASKS</div>
+        <div style={{fontSize:11,color:timerActive?"#22C55E":"#2A2A40",letterSpacing:2}}>{timerActive?"● RANKED LIVE":"● START TIMER FIRST"}</div>
+      </div>
+
+      <div style={{padding:"0 18px"}}>
+        {!timerActive && !dayLocked && (
+          <div style={{padding:"10px 14px",background:toRgba(C,0.07),border:`1px solid ${toRgba(C,0.18)}`,borderRadius:10,fontSize:13,color:toRgba(C,0.7),marginBottom:14}}>
+            Start your ranked day from Home to check off tasks and earn RR.
+          </div>
+        )}
+
+        <div style={sectionLabel}>Daily Tasks — {doneCnt}/{tasks.length}</div>
+        {tasks.map(t => {
+          const cat = CATS.find(c=>c.id===t.cat);
+          const done = !!doneTasks[t.id];
+          return (
+            <div key={t.id} className="card-hover" onClick={()=>{if(dayLocked||!timerActive)return;setDoneTasks(p=>{const n={...p,[t.id]:!p[t.id]};p({doneTasks:n});return n;});}} style={{background:done?toRgba("#22C55E",0.06):"#0C0C18",border:`1px solid ${done?"#22C55E2A":"#1A1A28"}`,borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12,cursor:(dayLocked||!timerActive)?"default":"pointer"}}>
+              <div style={{width:22,height:22,borderRadius:5,border:`2px solid ${done?"#22C55E":"#252538"}`,background:done?"#22C55E":"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#000",flexShrink:0,transition:"all 0.15s"}}>{done?"✓":""}</div>
+              <span style={{fontSize:18}}>{cat?.emoji}</span>
+              <span style={{flex:1,fontSize:15,color:done?"#4ADE80":"#C0C8E0",textDecoration:done?"line-through":"none"}}>{t.text}</span>
+              <span style={{fontSize:11,color:cat?.color,background:toRgba(cat?.color||"#555",0.1),padding:"2px 8px",borderRadius:10}}>{cat?.name}</span>
+            </div>
+          );
+        })}
+
+        {/* Side quests */}
+        <div style={{...sectionLabel,marginTop:20,color:"#FBBF2466"}}>⚡ Side Quests — Bonus RR ({sqDone}/{sideQuests.length})</div>
+        {sideQuests.map(q => {
+          const done = !!doneSQ[q.id];
+          return (
+            <div key={q.id} className="card-hover" onClick={()=>{if(dayLocked||!timerActive)return;setDoneSQ(p=>{const n={...p,[q.id]:!p[q.id]};p({doneSQ:n});return n;});}} style={{background:done?toRgba("#FBBF24",0.06):"#0C0C18",border:`1px solid ${done?"#FBBF2430":"#1A1A28"}`,borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12,cursor:(dayLocked||!timerActive)?"default":"pointer"}}>
+              <div style={{width:22,height:22,borderRadius:5,border:`2px solid ${done?"#FBBF24":"#252538"}`,background:done?"#FBBF24":"none",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#000",flexShrink:0,transition:"all 0.15s"}}>{done?"✓":""}</div>
+              <span style={{fontSize:18}}>{q.emoji}</span>
+              <span style={{flex:1,fontSize:15,color:done?"#FBBF24":"#C0C8E0",textDecoration:done?"line-through":"none"}}>{q.text}</span>
+              <span className="orb" style={{fontSize:12,color:"#FBBF24"}}>+{q.rr}</span>
+            </div>
+          );
+        })}
+
+        {/* Add task */}
+        <div style={{...cardBase,marginTop:20,marginBottom:14}}>
+          <div style={sectionLabel}>Add New Task</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <input value={newText} onChange={e=>setNewText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(()=>{if(!newText.trim())return;const t={id:`t${Date.now()}`,text:newText.trim(),cat:newCat};const n=[...tasks,t];setTasks(n);setNewText("");p({tasks:n});})()}  placeholder="Add a new daily task..."/>
+            <select value={newCat} onChange={e=>setNewCat(e.target.value)}>
+              {CATS.map(c=><option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+            </select>
+            <button className="btn-hover" onClick={()=>{if(!newText.trim())return;const t={id:`t${Date.now()}`,text:newText.trim(),cat:newCat};const n=[...tasks,t];setTasks(n);setNewText("");p({tasks:n});}} style={{padding:"12px",background:toRgba(C,0.1),border:`1px solid ${toRgba(C,0.28)}`,borderRadius:10,color:C,fontFamily:"'Orbitron',monospace",fontSize:12,letterSpacing:2}}>+ ADD TASK</button>
+          </div>
         </div>
 
-        <div style={styles.rankCard}>
-          <div style={styles.rankBadge}>
-            <div style={styles.rankIcon}>{rankData.icon}</div>
+        {/* Manage existing tasks */}
+        {tasks.length>0 && (
+          <>
+            <div style={sectionLabel}>Manage Tasks</div>
+            {tasks.map(t=>{
+              const cat=CATS.find(c=>c.id===t.cat);
+              return (
+                <div key={t.id} style={{...cardBase,marginBottom:7,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,border:"1px solid #151525"}}>
+                  <span>{cat?.emoji}</span>
+                  <span style={{flex:1,fontSize:14,color:"#888"}}>{t.text}</span>
+                  <span style={{fontSize:11,color:cat?.color}}>{cat?.name}</span>
+                  <button onClick={()=>{const n=tasks.filter(x=>x.id!==t.id);setTasks(n);p({tasks:n});}} style={{background:"none",border:"none",color:"#2A2A40",fontSize:20,lineHeight:1}}>×</button>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── RANKS ────────────────────────────────────────────────────
+  const Ranks = (
+    <div>
+      <div style={{padding:"18px 18px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div className="orb" style={{fontSize:20,fontWeight:900,color:C,letterSpacing:4}}>RANK LADDER</div>
+        <div style={{fontSize:11,color:C,letterSpacing:2}}>{rank.full}</div>
+      </div>
+      <div style={{padding:"0 18px"}}>
+        <div style={{fontSize:12,color:"#3A3A50",lineHeight:1.8,marginBottom:16}}>
+          Every tier has increased difficulty. Ascendant and above: gains are gated by streak, losses are amplified. 14-day streak unlocks bonus RR.
+        </div>
+        {[...ALL_RANKS].reverse().map((r,i)=>{
+          const rIdx = RANK_COUNT-1-i;
+          const cur = rIdx===rankIdx;
+          const past = rIdx<rankIdx;
+          const tIdx2 = TIERS.findIndex(t=>t.name===r.tier.name);
+          const t2 = r.tier;
+          return (
+            <div key={r.full} style={{background:cur?toRgba(t2.color,0.09):"#0C0C18",border:`1px solid ${cur?toRgba(t2.color,0.38):past?"#111120":"#181828"}`,borderRadius:10,padding:"12px 14px",marginBottom:5,display:"flex",alignItems:"center",gap:12,opacity:past?0.45:1,transition:"all 0.2s"}}>
+              <div style={{width:38,height:38,borderRadius:"50%",border:`2px solid ${cur?t2.color:toRgba(t2.color,past?0.25:0.18)}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:cur?`0 0 14px ${toRgba(t2.color,0.5)}`:undefined,flexShrink:0}}>{t2.emoji}</div>
+              <div style={{flex:1}}>
+                <div className="orb" style={{fontSize:13,fontWeight:700,color:cur?t2.color:past?toRgba(t2.color,0.35):"#3A3A50",letterSpacing:1}}>{r.full}</div>
+                <div style={{fontSize:11,color:"#252535",marginTop:2}}>×{DIFF[tIdx2].toFixed(1)} difficulty{tIdx2>=6?" · Hard mode after Ascendant":""}</div>
+              </div>
+              {cur && <div className="orb" style={{fontSize:9,letterSpacing:2,color:t2.color,background:toRgba(t2.color,0.12),padding:"4px 10px",borderRadius:20}}>YOU</div>}
+              {past && <span style={{color:"#22C55E",fontSize:18}}>✓</span>}
+              {r.full==="Radiant"&&!cur&&!past && <span style={{fontSize:10,color:"#3A3A50",letterSpacing:1}}>FINAL</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── HISTORY ──────────────────────────────────────────────────
+  const History = (
+    <div>
+      <div style={{padding:"18px 18px 14px",display:"flex",justifyContent:"space-between"}}>
+        <div className="orb" style={{fontSize:20,fontWeight:900,color:C,letterSpacing:4}}>MATCH LOG</div>
+        <div className="orb" style={{fontSize:12,color:"#3A3A50",letterSpacing:2}}>{history.length} DAYS</div>
+      </div>
+      <div style={{padding:"0 18px"}}>
+        {history.length===0 && <div style={{textAlign:"center",color:"#2A2A40",fontSize:14,marginTop:40,letterSpacing:3}}>NO MATCH HISTORY YET</div>}
+        {history.map((h,i)=>(
+          <div key={i} style={{background:"#0C0C18",border:`1px solid ${h.rr>0?"#22C55E22":"#F8717122"}`,borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={styles.rankName}>{tierName}</div>
-              <div style={styles.rankSub}>TOTAL RR: {totalRR}</div>
+              <div className="orb" style={{fontSize:10,color:"#3A3A50",letterSpacing:2}}>{h.date}</div>
+              <div style={{fontSize:14,color:"#888",marginTop:3}}>{h.from} <span style={{color:h.rr>0?"#22C55E":"#F87171"}}>{h.rr>0?"▲":"▼"}</span> {h.to}</div>
+              <div style={{fontSize:11,color:"#2A2A40",marginTop:2}}>{h.done}/{h.total} tasks · {h.pct}% completion</div>
             </div>
+            <div className="orb" style={{fontSize:26,fontWeight:900,color:h.rr>0?"#22C55E":"#F87171"}}>{h.rr>0?"+":""}{h.rr}</div>
           </div>
-          <div style={styles.rrBar}><div style={styles.rrFill}/></div>
-          <div style={styles.rrLabel}><span>{rr} RR</span><span>100 RR</span></div>
-          <div style={styles.streakBar}>
-            <span style={{ fontSize: 18 }}>🔥</span>
-            <span style={{ fontSize: 13, color: "#888" }}>{streak} day streak</span>
-            {isAsc && <span style={{ fontSize: 11, color: streakDays >= 14 ? "#4ADE80" : "#F59E0B", marginLeft: "auto" }}>Consistency: {streakDays}/14 days</span>}
-          </div>
-          <div style={styles.ascWarning}>⚠ Ascendant difficulty: maintain 14-day streak for bonus RR gains</div>
-        </div>
-
-        <div style={styles.section}>
-          <div style={styles.progressRing}>
-            <div style={styles.pct}>{Math.round(pct * 100)}%</div>
-            <div style={{ fontSize: 12, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Daily Progress — {completedCount}/{totalCount} tasks</div>
-          </div>
-
-          {bonusMission && !aiLoading && (
-            <div style={styles.bonusCard}>
-              <div style={{ fontSize: 10, letterSpacing: 3, color: "#F59E0B", marginBottom: 6, textTransform: "uppercase" }}>⚡ Daily Bonus Mission</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#E8E8F0", marginBottom: 4 }}>{bonusMission.title}</div>
-              <div style={{ fontSize: 13, color: "#888", marginBottom: 10 }}>{bonusMission.description}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "#F59E0B" }}>+{bonusMission.bonusRR} bonus RR</span>
-                <button
-                  onClick={() => { if (!dailyLocked) { setBonusDone(true); persist({ bonusDone: true }); } }}
-                  style={{ ...styles.catBtn(!bonusDone), background: bonusDone ? "#22C55E22" : undefined, color: bonusDone ? "#22C55E" : undefined, border: bonusDone ? "1px solid #22C55E44" : undefined }}
-                >{bonusDone ? "✓ Done!" : "Complete"}</button>
-              </div>
-            </div>
-          )}
-
-          {!dailyLocked ? (
-            <button style={styles.bigBtn} onClick={lockAndCalculateRR}>
-              END DAY — CALCULATE RR
-            </button>
-          ) : (
-            <div style={{ ...styles.bigBtn, opacity: 0.5, cursor: "default", textAlign: "center" }}>
-              ✓ DAY COMPLETE — COME BACK TOMORROW
-            </div>
-          )}
-
-          {aiLoading && <div style={{ textAlign: "center", color: "#555", fontSize: 13, marginTop: 12, letterSpacing: 2 }}>COACH AI ANALYZING...</div>}
-          {aiMsg && (
-            <div style={styles.aiBox}>
-              <div style={{ fontSize: 10, letterSpacing: 3, color: rankData.color, marginBottom: 8, textTransform: "uppercase" }}>🤖 Coach AI</div>
-              <div style={{ fontSize: 14, color: "#CCC", lineHeight: 1.6 }}>{aiMsg}</div>
-            </div>
-          )}
-        </div>
-
-        {showRRGain !== null && (
-          <div style={styles.rrPop}>
-            <div style={{ fontSize: 56, fontWeight: 900, color: showRRGain > 0 ? "#22C55E" : "#EF4444", textShadow: `0 0 40px ${showRRGain > 0 ? "#22C55E" : "#EF4444"}`, animation: "fadeOut 3s forwards" }}>
-              {showRRGain > 0 ? "+" : ""}{showRRGain} RR
-            </div>
-            <style>{`@keyframes fadeOut { 0%{opacity:1;transform:translate(-50%,-50%) scale(1)} 70%{opacity:1;transform:translate(-50%,-60%) scale(1.1)} 100%{opacity:0;transform:translate(-50%,-80%) scale(0.8)} }`}</style>
-          </div>
-        )}
+        ))}
       </div>
-    ),
+    </div>
+  );
 
-    tasks: (
-      <div>
-        <div style={{ ...styles.header, paddingBottom: 16 }}>
-          <div style={styles.logo}>Tasks</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setTab("tasks")} style={styles.catBtn(tab === "tasks")}>Today</button>
-            <button onClick={() => setTab("manage")} style={styles.catBtn(tab === "manage")}>Manage</button>
-          </div>
-        </div>
-
-        {tab === "tasks" && (
-          <div style={{ padding: "0 16px" }}>
-            {CATEGORIES.filter(c => selectedCategories.includes(c.id)).map(cat => {
-              const catTasks = activeTasks.filter(t => t.category === cat.id);
-              if (!catTasks.length) return null;
-              return (
-                <div key={cat.id} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, letterSpacing: 3, color: cat.color, textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>{cat.emoji}</span> {cat.name}
-                  </div>
-                  {catTasks.map(t => (
-                    <div key={t.id} style={styles.taskCard(!!completedToday[t.id])} onClick={() => toggleTask(t.id)}>
-                      <div style={styles.checkbox(!!completedToday[t.id])}>{completedToday[t.id] ? "✓" : ""}</div>
-                      <span style={styles.taskText(!!completedToday[t.id])}>{t.text}</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-            {dailyLocked && <div style={{ textAlign: "center", color: "#555", fontSize: 13, letterSpacing: 2, marginTop: 20 }}>DAY LOCKED — SEE YOU TOMORROW</div>}
-          </div>
-        )}
-
-        {tab === "manage" && (
-          <div style={{ padding: "0 16px" }}>
-            <div style={styles.sectionTitle}>Active Categories</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
-              {CATEGORIES.map(c => (
-                <button key={c.id} style={{ ...styles.catBtn(selectedCategories.includes(c.id)), borderColor: selectedCategories.includes(c.id) ? c.color + "66" : "#222", color: selectedCategories.includes(c.id) ? c.color : "#555" }}
-                  onClick={() => {
-                    const next = selectedCategories.includes(c.id) ? selectedCategories.filter(x => x !== c.id) : [...selectedCategories, c.id];
-                    setSelectedCategories(next);
-                    persist({ selectedCategories: next });
-                  }}>
-                  {c.emoji} {c.name}
-                </button>
-              ))}
-            </div>
-
-            <div style={styles.sectionTitle}>Add Custom Task</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              <input style={styles.input} value={newTaskText} onChange={e => setNewTaskText(e.target.value)} placeholder="Task description..." />
-              <select style={styles.select} value={newTaskCat} onChange={e => setNewTaskCat(e.target.value)}>
-                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-              </select>
-              <button style={styles.bigBtn} onClick={addCustomTask}>+ Add Task</button>
-            </div>
-
-            <div style={styles.sectionTitle}>All Tasks</div>
-            {tasks.map(t => {
-              const cat = CATEGORIES.find(c => c.id === t.category);
-              return (
-                <div key={t.id} style={{ ...styles.taskCard(false), cursor: "default" }}>
-                  <div style={styles.catDot(t.category)}/>
-                  <span style={{ fontSize: 13, color: "#AAA", flex: 1 }}>{t.text}</span>
-                  <span style={{ fontSize: 11, color: cat?.color || "#555" }}>{cat?.emoji}</span>
-                  {t.isCustom && <button style={styles.removeBtn} onClick={() => removeTask(t.id)}>✕</button>}
-                </div>
-              );
-            })}
-          </div>
-        )}
+  // ── COACH ────────────────────────────────────────────────────
+  const Coach = (
+    <div>
+      <div style={{padding:"18px 18px 14px"}}>
+        <div className="orb" style={{fontSize:20,fontWeight:900,color:C,letterSpacing:4}}>AI COACH</div>
+        <div style={{fontSize:12,color:"#3A3A50",letterSpacing:2,marginTop:4}}>POWERED BY CLAUDE · DATA-DRIVEN ANALYSIS</div>
       </div>
-    ),
-
-    ranks: (
-      <div>
-        <div style={{ ...styles.header, paddingBottom: 16 }}>
-          <div style={styles.logo}>Rank Ladder</div>
-          <div style={{ fontSize: 12, color: rankData.color }}>{tierName}</div>
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          {[...RANKS].reverse().map(rank => {
-            const divs = rank.divisions[0] === "" ? [""] : rank.divisions;
-            return divs.map(div => {
-              const fullName = div ? `${rank.tier} ${div}` : rank.tier;
-              const tIdx = ALL_TIER_NAMES.indexOf(fullName);
-              const isCurrent = fullName === tierName;
-              const isPast = tIdx < tierIndex;
-              return (
-                <div key={fullName} style={{ background: isCurrent ? hexToRgba(rank.color, 0.12) : "#12121A", border: `1px solid ${isCurrent ? rank.color + "66" : isPast ? "#1E1E2E" : "#1A1A26"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", border: `2px solid ${rank.color}${isPast ? "44" : isCurrent ? "FF" : "22"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, opacity: isPast ? 0.4 : 1 }}>{rank.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: isCurrent ? rank.color : isPast ? "#444" : "#888", letterSpacing: 1 }}>{fullName}</div>
-                    {rank.tier === "Ascendant" && <div style={{ fontSize: 11, color: "#4ADE8088", marginTop: 2 }}>+50% harder • needs 14d streak</div>}
-                  </div>
-                  {isCurrent && <div style={{ fontSize: 10, letterSpacing: 2, color: rank.color, background: hexToRgba(rank.color, 0.15), padding: "4px 10px", borderRadius: 20 }}>YOU</div>}
-                  {isPast && <div style={{ fontSize: 16 }}>✓</div>}
-                  {rank.tier === "Radiant" && !isPast && !isCurrent && <div style={{ fontSize: 10, color: "#888", letterSpacing: 1 }}>PEAK</div>}
-                </div>
-              );
-            });
-          })}
-        </div>
-      </div>
-    ),
-
-    history: (
-      <div>
-        <div style={{ ...styles.header, paddingBottom: 16 }}>
-          <div style={styles.logo}>Match History</div>
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          {history.length === 0 && <div style={{ textAlign: "center", color: "#555", fontSize: 14, marginTop: 40, letterSpacing: 2 }}>NO MATCHES YET</div>}
-          {history.map((h, i) => (
-            <div key={i} style={styles.histCard(h.rr)}>
-              <div>
-                <div style={{ fontSize: 13, color: "#888" }}>{h.date}</div>
-                <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{h.tier} → {h.newTier} · {h.completed}/{h.total} tasks</div>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: h.rr > 0 ? "#22C55E" : "#EF4444" }}>{h.rr > 0 ? "+" : ""}{h.rr}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    ),
-
-    coach: (
-      <div>
-        <div style={{ ...styles.header, paddingBottom: 16 }}>
-          <div style={styles.logo}>AI Coach</div>
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          <div style={{ fontSize: 13, color: "#555", letterSpacing: 1, marginBottom: 16 }}>Ask your coach anything about your grind</div>
-          {[
-            "How do I stop losing RR?",
-            "What habits should I build this week?",
-            "Motivate me to keep going",
-            `What does reaching ${tierName} mean for my life?`,
-            "Give me a mental reset routine",
-            "How do I stay consistent for 14 days?",
-          ].map(q => (
-            <button key={q} style={{ ...styles.taskCard(false), cursor: "pointer", width: "100%", textAlign: "left", border: "1px solid #1E1E30" }} onClick={() => getAICoach(q)}>
-              <span style={{ color: rankData.color, fontSize: 16 }}>›</span>
-              <span style={{ fontSize: 14, color: "#AAA" }}>{q}</span>
-            </button>
-          ))}
-          {aiLoading && <div style={{ textAlign: "center", color: "#555", fontSize: 13, marginTop: 20, letterSpacing: 2 }}>COACH THINKING...</div>}
-          {aiMsg && (
-            <div style={{ ...styles.aiBox, marginTop: 16 }}>
-              <div style={{ fontSize: 10, letterSpacing: 3, color: rankData.color, marginBottom: 10, textTransform: "uppercase" }}>🤖 Coach Response</div>
-              <div style={{ fontSize: 15, color: "#DDD", lineHeight: 1.7 }}>{aiMsg}</div>
-            </div>
-          )}
-        </div>
-      </div>
-    ),
-  };
-
-  const navItems = [
-    { key: "home", label: "HOME", icon: "⌂" },
-    { key: "tasks", label: "TASKS", icon: "☑" },
-    { key: "ranks", label: "RANKS", icon: "◆" },
-    { key: "history", label: "HISTORY", icon: "◎" },
-    { key: "coach", label: "COACH", icon: "★" },
-  ];
-
-  return (
-    <div style={styles.app}>
-      <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
-      <div style={styles.bg}/>
-      <div style={styles.content}>
-        {screens[screen]}
-      </div>
-      <nav style={styles.nav}>
-        {navItems.map(n => (
-          <button key={n.key} style={styles.navBtn(screen === n.key)} onClick={() => setScreen(n.key)}>
-            <span style={{ fontSize: 18 }}>{n.icon}</span>
-            <span>{n.label}</span>
+      <div style={{padding:"0 18px"}}>
+        {[
+          {q:"Analyze my full history and tell me what patterns are hurting my RR gains.",        l:"📊 Full Performance Audit"},
+          {q:"What bad habits show up in my data? Be brutally honest.",                           l:"🔍 Habit Breakdown"},
+          {q:"I'm stuck. Give me a concrete bounce-back plan based on my stats.",                l:"📈 Recovery Plan"},
+          {q:"What does my current rank reveal about my life progress?",                         l:"🏆 Rank Psychology"},
+          {q:"Build me a 7-day challenge to maximize RR gains this week.",                       l:"⚡ 7-Day Battle Plan"},
+          {q:"Am I on pace for Radiant this year? Give me a realistic timeline.",                l:"🎯 Radiant Projection"},
+          {q:"Which category of tasks am I neglecting most? What does that cost me?",           l:"🧠 Category Analysis"},
+          {q:"Give me one mindset shift that will change everything for my ranking.",             l:"💡 Mindset Unlock"},
+        ].map(({q,l})=>(
+          <button key={q} className="card-hover" onClick={()=>callCoach(q)} style={{width:"100%",marginBottom:8,padding:"13px 16px",background:"#0C0C18",border:"1px solid #1A1A28",borderRadius:10,color:"#C0C8E0",fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{flex:1}}>{l}</span>
+            <span style={{color:C,fontSize:18}}>›</span>
           </button>
         ))}
-      </nav>
+
+        <div style={{...cardBase,marginBottom:14,marginTop:8}}>
+          <div style={sectionLabel}>Ask Anything</div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={coachQ} onChange={e=>setCoachQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&coachQ.trim()&&callCoach(coachQ)} placeholder="Custom question..."/>
+            <button className="btn-hover" onClick={()=>{if(coachQ.trim())callCoach(coachQ);}} style={{padding:"11px 18px",background:toRgba(C,0.12),border:`1px solid ${toRgba(C,0.3)}`,borderRadius:10,color:C,fontFamily:"'Orbitron',monospace",fontSize:12,letterSpacing:1,whiteSpace:"nowrap"}}>ASK ›</button>
+          </div>
+        </div>
+
+        {aiLoading && <div style={{textAlign:"center",color:"#3A3A50",fontSize:12,letterSpacing:3,marginTop:10}}>COACH PROCESSING YOUR DATA...</div>}
+        {aiMsg && (
+          <div style={{...cardBase,background:"#09090F",border:`1px solid ${toRgba(C,0.15)}`,marginBottom:14}}>
+            <div style={{fontSize:9,letterSpacing:4,color:C,marginBottom:10,textTransform:"uppercase"}}>🤖 Coach Response</div>
+            <div style={{fontSize:15,color:"#A0AEC0",lineHeight:1.8}}>{aiMsg}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── POPUP ────────────────────────────────────────────────────
+  const PromotePopup = popup?.type==="promote" && (
+    <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}} onClick={()=>setPopup(null)}>
+      {Array.from({length:20}).map((_,i)=>(
+        <div key={i} style={{position:"absolute",width:10,height:10,borderRadius:"50%",background:[C,"#22C55E","#FBBF24","#F87171","#A78BFA"][i%5],left:`${5+i*4.5}%`,top:`${20+Math.random()*20}%`,animation:`confettiFall ${0.8+Math.random()*0.8}s ${Math.random()*0.4}s forwards`}}/>
+      ))}
+      <div style={{textAlign:"center",animation:"scaleIn 0.5s cubic-bezier(0.34,1.56,0.64,1)",padding:"40px 32px",background:"rgba(6,6,14,0.9)",border:`1px solid ${toRgba(popup.rank.tier.color,0.4)}`,borderRadius:24,maxWidth:340,width:"90%",boxShadow:`0 0 60px ${toRgba(popup.rank.tier.color,0.3)}`}}>
+        <div style={{fontSize:72,marginBottom:8,animation:"rankBounce 0.8s ease"}}>{popup.rank.tier.emoji}</div>
+        <div className="orb" style={{fontSize:11,letterSpacing:6,color:toRgba(popup.rank.tier.color,0.6),marginBottom:10}}>CONGRATULATIONS</div>
+        <div className="orb" style={{fontSize:15,fontWeight:900,color:"#888",letterSpacing:4,marginBottom:8}}>YOU ARE PROMOTED TO</div>
+        <div className="orb" style={{fontSize:38,fontWeight:900,color:popup.rank.tier.color,letterSpacing:5,textShadow:`0 0 30px ${popup.rank.tier.color}`,lineHeight:1.1}}>{popup.rank.full}</div>
+        <div style={{fontSize:12,color:"#3A3A50",marginTop:20}}>Tap anywhere to continue</div>
+      </div>
+    </div>
+  );
+
+  const RRPopup = popup?.type==="rr" && (
+    <div style={{position:"fixed",top:"42%",left:"50%",zIndex:300,pointerEvents:"none",animation:"rrFloat 3.8s forwards",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+      <div className="orb" style={{fontSize:64,fontWeight:900,color:popup.col,textShadow:`0 0 40px ${popup.col}`,lineHeight:1}}>{popup.rr>0?"+":""}{popup.rr}</div>
+      <div className="orb" style={{fontSize:14,color:popup.col,letterSpacing:5,marginTop:4}}>RR {popup.rr>0?"GAINED":"LOST"}</div>
+    </div>
+  );
+
+  // ── MAIN RENDER ──────────────────────────────────────────────
+  const MAP = {home:Home, tasks:Tasks, ranks:Ranks, history:History, coach:Coach};
+  const NAV = [{k:"home",l:"HOME",i:"⌂"},{k:"tasks",l:"TASKS",i:"☑"},{k:"ranks",l:"RANKS",i:"◆"},{k:"history",l:"LOG",i:"◉"},{k:"coach",l:"COACH",i:"★"}];
+
+  return (
+    <div className="app">
+      <style>{CSS}</style>
+      {/* Ambient bg */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,background:`radial-gradient(ellipse 70% 40% at 0% 0%,${toRgba(C,0.06)} 0%,transparent 65%), radial-gradient(ellipse 50% 30% at 100% 100%,${toRgba(tier.glow,0.04)} 0%,transparent 60%)`}}/>
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,backgroundImage:`radial-gradient(${toRgba(C,0.04)} 1px,transparent 1px)`,backgroundSize:"24px 24px"}}/>
+
+      <div style={{position:"relative",zIndex:1}}>
+        <div className="screen">
+          {phase==="setup" ? Setup : MAP[screen]}
+        </div>
+      </div>
+
+      {phase==="rank" && (
+        <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"rgba(6,6,14,0.96)",borderTop:`1px solid ${toRgba(C,0.15)}`,backdropFilter:"blur(16px)",display:"flex",zIndex:100,padding:"4px 0 6px"}}>
+          {NAV.map(n=>(
+            <button key={n.k} onClick={()=>setScreen(n.k)} style={{flex:1,padding:"10px 4px 5px",background:"none",border:"none",color:screen===n.k?C:"#2A2A40",fontSize:9,display:"flex",flexDirection:"column",alignItems:"center",gap:4,fontFamily:"'Orbitron',monospace",letterSpacing:1,textTransform:"uppercase",transition:"all 0.2s"}}>
+              <span style={{fontSize:20,filter:screen===n.k?`drop-shadow(0 0 6px ${C})`:"none",transition:"filter 0.2s"}}>{n.i}</span>
+              <span>{n.l}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {PromotePopup}
+      {RRPopup}
     </div>
   );
 }
