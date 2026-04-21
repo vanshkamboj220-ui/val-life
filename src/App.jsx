@@ -65,18 +65,25 @@ function calcRR(pct, tIdx, streakDays, bonus) {
 }
 
 /* ─── AI helper — auto-detects localhost vs deployed ────────── */
-const IS_LOCAL = typeof window!=="undefined" && (window.location.hostname==="localhost"||window.location.hostname==="127.0.0.1");
-const AI_URL   = IS_LOCAL ? "http://localhost:3001/ai" : "https://api.anthropic.com/v1/messages";
+// Gemini proxy — make sure proxy.cjs is running: node proxy.cjs
+const PROXY_URL = "http://localhost:3002/api/chat";
 
 async function callAI(systemPrompt, userMsg) {
-  const body = IS_LOCAL
-    ? JSON.stringify({system:systemPrompt, message:userMsg})
-    : JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system:systemPrompt,messages:[{role:"user",content:userMsg}]});
-  const r = await fetch(AI_URL,{method:"POST",headers:{"Content-Type":"application/json"},body});
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const d = await r.json();
-  if (IS_LOCAL) return typeof d==="string"?d:(d.text||d.reply||d.content||JSON.stringify(d));
-  return d.content?.map(x=>x.text||"").join("")||"";
+  // Gemini has no system prompt field, so merge both into one message
+  const combined = systemPrompt ? `${systemPrompt}\n\n${userMsg}` : userMsg;
+  let r, d;
+  try {
+    r = await fetch(PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: combined }),
+    });
+    d = await r.json();
+  } catch (err) {
+    throw new Error("Proxy offline — run: node proxy.cjs");
+  }
+  if (d && d.text) return d.text;
+  throw new Error("Empty Gemini response");
 }
 
 /* ═══════════════════════════════════════════════════════════════
