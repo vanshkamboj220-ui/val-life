@@ -65,25 +65,204 @@ function calcRR(pct, tIdx, streakDays, bonus) {
 }
 
 /* ─── AI helper — auto-detects localhost vs deployed ────────── */
-// Gemini proxy — make sure proxy.cjs is running: node proxy.cjs
-const PROXY_URL = "http://localhost:3002/api/chat";
+/* ══════════════════════════════════════════════════════════════
+   OFFLINE AI ENGINE — Zero API, Zero Cost, 100% Local
+   Generates intelligent, personalized responses using your
+   real rank, streak, history, and task data.
+══════════════════════════════════════════════════════════════ */
 
-async function callAI(systemPrompt, userMsg) {
-  // Gemini has no system prompt field, so merge both into one message
-  const combined = systemPrompt ? `${systemPrompt}\n\n${userMsg}` : userMsg;
-  let r, d;
+const TIPS_DB = {
+  fitness: [
+    "🏋️ Progressive overload: add 2.5kg every week to compound lifts (squat, bench, deadlift). This single habit builds more muscle than any fancy program.",
+    "🥩 Hit 1.8g protein per kg of bodyweight daily — chicken, eggs, paneer, lentils, Greek yogurt. Muscle is literally built from this.",
+    "😴 Sleep 7–9 hrs. Growth hormone peaks in deep sleep — skipping sleep kills your gains harder than skipping the gym.",
+    "⚡ Superset opposing muscles (chest+back, bicep+tricep) — cuts workout time 40% while doubling the pump.",
+    "🔥 Don't train to failure every set. Leave 2 reps in the tank — this allows higher training volume and faster recovery.",
+    "💧 Drink 500ml water before your session. Dehydration drops strength by up to 15% — hydration is free performance.",
+    "📈 Track every workout in a notebook. What gets measured gets improved. Blind training = slow progress.",
+  ],
+  mindset: [
+    "🧠 Do your hardest mental task in the first 90 min after waking — prefrontal cortex is sharpest then, before decision fatigue sets in.",
+    "📓 Write 3 specific gratitudes + 1 lesson from yesterday each morning. Takes 3 min, proven to rewire your baseline mood over 6 weeks.",
+    "🎯 When overwhelmed, pick ONE task. Not a list — one. Complete it fully before touching anything else. Focus compounds.",
+    "🌬️ 4-7-8 breathing when stressed: inhale 4s, hold 7s, exhale 8s. Activates parasympathetic nervous system in under 60 seconds.",
+    "📵 First 30 min of your day, no phone. Your brain defaults to the last thing it processed — let that be YOUR intention, not a feed.",
+    "⏸️ Schedule deliberate breaks. 90 min deep work → 20 min real rest. Ultradian rhythms mean your brain needs this to sustain quality.",
+    "🪞 Audit your self-talk. Replace 'I can't' with 'I haven't mastered this yet.' Fixed mindset vs growth mindset is a daily choice.",
+  ],
+  career: [
+    "🚀 The 2-hour deep work block is sacred — no notifications, no tabs, just the one skill you're building. This is how experts are made.",
+    "📚 Feynman technique: after learning anything, explain it out loud like you're teaching a 10-year-old. Gaps in your knowledge will become obvious instantly.",
+    "🤝 Send one value-first message to someone in your field every week. Not asking for anything — just sharing something useful. Network builds itself.",
+    "🗂️ End every work session by writing tomorrow's top 3 tasks. Your brain solves problems overnight — give it something to work on.",
+    "💡 Build one public project, article, or post per month. Visibility compounds. Most people do all their best work in private — don't.",
+    "⚙️ Automate or eliminate before you optimize. The best use of your time is tasks only YOU can do.",
+    "📊 Review your week every Sunday — what moved the needle, what was just busyness? Cut the busyness ruthlessly.",
+  ],
+  social: [
+    "❤️ Give your full attention for 10 minutes to someone you care about — phone down, eye contact, actually listening. This is rarer than you think.",
+    "🤝 Remember 3 things about everyone you meet: their name, one thing they care about, one thing they're working on. Use these next time.",
+    "🗣️ In conflict, say 'I feel X when Y happens' instead of 'You always Z.' Non-accusatory framing defuses 80% of arguments before they escalate.",
+    "🎁 Do one unexpected kind thing for someone this week — not because they asked. Random acts of care build the deepest relationships.",
+    "📞 Call, don't text, for important conversations. Voice conveys 38% of meaning that text completely loses.",
+    "🌱 Audit your 5 closest people. Energy is contagious — surround yourself with people who make you want to be better.",
+    "⏳ Quality over quantity — 1 deep 2-hour conversation is worth more than 10 quick check-ins.",
+  ],
+  finance: [
+    "💰 Pay yourself first: the moment income arrives, move 20% to savings before spending anything. Automate this so willpower isn't required.",
+    "📊 Track every rupee for 30 days — just track, don't judge. You will find at least 2 subscriptions or habits you can cut painlessly.",
+    "📈 Start investing even if it's ₹500/month. Index funds, SIPs — time in market beats timing the market. Starting at 20 vs 30 doubles your outcome.",
+    "🚫 The 24-hour rule: for any non-essential purchase over ₹500, wait 24 hours. 80% of the time, you won't buy it.",
+    "🎯 Build a 3-month emergency fund before investing aggressively. Financial anxiety kills productivity — security enables focus.",
+    "📚 Read one finance book per quarter: Rich Dad Poor Dad, The Psychology of Money, I Will Teach You To Be Rich. Knowledge compounds like interest.",
+    "💡 Your income is a lagging indicator of your skills. Invest in skills that can double your earning potential before optimizing expenses.",
+  ],
+  creative: [
+    "🎨 Create before you consume — spend the first 30 min of your creative session making something, anything, before opening social media or YouTube.",
+    "✏️ Quantity breeds quality. Set a goal of 100 bad ideas, 100 rough sketches, 100 bad paragraphs. The good stuff hides inside the bad output.",
+    "🔄 Steal like an artist — study 3 creators you admire, break down exactly what they do, then remix it with your own voice. This is how style develops.",
+    "⏰ Constraints spark creativity. Give yourself 25 minutes and one restriction (only blue, only 100 words, only 4 chords). Limitations force ingenuity.",
+    "🗃️ Keep an idea file — whenever inspiration hits, capture it immediately. Ideas don't come back. Review this file every week.",
+    "😴 Your subconscious solves creative problems during sleep. Before bed, ask yourself the problem you're stuck on. Morning often brings answers.",
+    "🎭 Ship imperfect work consistently. The creator who posts every week beats the perfectionist who posts once a year — every time.",
+  ],
+};
+
+const SQ_REASONS_DB = {
+  sq1: "Waking before 6 AM gives you 1–2 hours of undisturbed focus before the world demands your attention. This quiet time is where your biggest goals get worked on — it directly accelerates everything else in your task list.",
+  sq2: "Starting your day without a phone keeps your first thoughts YOUR thoughts — not reactions to others' content. This protects your mood, focus, and intention for the first critical 30 minutes that set the tone for the whole day.",
+  sq3: "Cold showers trigger a 250–300% norepinephrine spike — the brain's focus and motivation chemical. 2 minutes of cold water gives you the same alertness boost as a strong coffee, with zero crash.",
+  sq4: "A 20-minute outdoor walk lowers cortisol, boosts creative thinking by 81% (Stanford study), and resets mental fatigue. It's the highest ROI recovery tool that most people skip.",
+  sq5: "Eliminating junk food for one day stabilizes blood sugar, which directly improves your mood stability, focus duration, and energy consistency — all things that make your other tasks easier to complete.",
+  sq6: "Learning one new thing daily compounds massively. Over a year that's 365 new concepts — the difference between someone who stagnates and someone who becomes genuinely exceptional in their field.",
+  sq7: "Doing one scary thing daily systematically desensitizes your fear response. Each completion builds evidence that you can handle discomfort — the core skill behind every major life achievement.",
+  sq8: "Helping someone creates an immediate mood elevation (helper's high) through serotonin release. It also builds social capital that returns to you in unexpected ways — relationships are the highest-yield investment.",
+  sq9: "Journaling for 10 minutes externalizes mental noise, reducing anxiety and improving problem clarity. Research shows it boosts immune function, improves sleep quality, and accelerates emotional processing.",
+  sq10: "3L of water directly impacts your cognitive performance — even 1% dehydration causes measurable drops in concentration, memory, and mood. Most people are chronically mildly dehydrated without knowing it.",
+};
+
+const BONUS_MISSIONS = [
+  {title:"The No-Excuse Protocol",     description:"Complete every single task today — no partial credit, no rescheduling.",     bonusRR:15, tip:"Discipline is doing it when you don't feel like it."},
+  {title:"The Silence Challenge",      description:"Spend 20 minutes today in complete silence with no phone, no music, just thinking.", bonusRR:12, tip:"In the silence you'll find the clarity you've been searching for."},
+  {title:"The Reach-Out Mission",      description:"Message someone you haven't spoken to in 3+ months — genuinely, not just to check in.", bonusRR:10, tip:"Relationships are the only asset that pays dividends forever."},
+  {title:"The 5AM Protocol",           description:"Tomorrow, wake up 1 hour earlier than usual and use that time for your #1 goal.",   bonusRR:15, tip:"The morning belongs to whoever claims it first."},
+  {title:"The Analog Hour",            description:"For 1 hour today, do your work with zero screens — pen, paper, thinking only.",      bonusRR:12, tip:"Deep focus is a superpower in a distracted world."},
+  {title:"The Extra Mile",             description:"Add 20% more time or effort to your most important task today.",                    bonusRR:14, tip:"The extra mile is always uncrowded."},
+  {title:"The Body Scan",              description:"Do 10 minutes of stretching or yoga today — pay attention to where your body is tight.", bonusRR:10, tip:"Your body is your primary tool. Maintain it."},
+  {title:"The Deep Work Block",        description:"Work for 90 minutes on one task with zero interruptions — phone off, door closed.",  bonusRR:15, tip:"One focused hour is worth five scattered hours."},
+  {title:"The Gratitude Audit",        description:"Write 5 specific things you're grateful for — not generic, but exactly why each matters.", bonusRR:10, tip:"Gratitude transforms what you have into enough."},
+  {title:"The Cold Start",             description:"Take a cold shower today and stay in for at least 2 minutes.",                       bonusRR:12, tip:"Every hard thing you do makes the next hard thing easier."},
+  {title:"The Vision Check",           description:"Spend 15 minutes writing exactly where you want to be in 1 year — be specific.",    bonusRR:12, tip:"A goal without a plan is just a wish."},
+  {title:"The Learning Sprint",        description:"Spend 30 minutes learning one specific skill relevant to your biggest goal.",        bonusRR:12, tip:"Knowledge is the only asset that can't be taken from you."},
+];
+
+const COACH_RESPONSES = {
+  start: [
+    (rank,streak,tasks) => `🎮 RANKED DAY ACTIVATED — ${rank}. You're carrying ${streak} day streak energy into this. ${tasks.length} tasks on the board. Full completion = maximum RR. Every hour that timer ticks is a chance to climb. Lock in and execute.`,
+    (rank,streak,tasks) => `⚡ ${rank} — Let's get it. ${streak > 0 ? `${streak} day streak on the line` : 'Fresh start today'}. Your ${tasks.length} tasks are your match objectives. Don't just play — dominate. The ranked system is watching every action.`,
+    (rank,streak,tasks) => `🔥 Day initialized. ${rank} is your current rank — is that where you belong? ${tasks.length} tasks. Each one completed is RR in the bank. Miss them and you're gifting RR to your opponents. Choose.`,
+  ],
+  win: [
+    (rr,done,total,rank,promoted) => `📈 +${rr} RR BANKED. ${done}/${total} tasks completed. ${promoted ? `🎉 PROMOTION TO ${rank} — you earned this.` : `${rank} — climbing.`} ${done===total ? 'Perfect day. That consistency is what separates the top 1%.' : 'Strong output. Push for 100% tomorrow.'}`,
+    (rr,done,total,rank,promoted) => `✅ CLEAN PERFORMANCE. +${rr} RR. ${done}/${total} tasks down. ${promoted ? `RANK UP to ${rank}!` : rank} — your daily discipline is compounding. Keep this standard and Radiant is inevitable.`,
+    (rr,done,total,rank) => `💪 ${done}/${total} tasks = +${rr} RR added. You showed up when it mattered. That's the difference between players who climb and players who don't. ${rank} — next target locked.`,
+  ],
+  loss: [
+    (rr,done,total,rank) => `📉 -${Math.abs(rr)} RR. ${done}/${total} tasks. Brutal but honest — you didn't execute. ${rank} is where you are because of today's choices. The timer restarts. Tomorrow is a clean slate. Will you take it?`,
+    (rr,done,total,rank) => `⚠️ ${done}/${total} tasks = -${Math.abs(rr)} RR. That's the algorithm being honest with you. ${rank} — this rank reflects today's effort. Not potential. Effort. Change the effort, change the rank.`,
+    (rr,done,total,rank) => `🔴 Loss. -${Math.abs(rr)} RR. ${done}/${total} done. Every top performer has bad days — the difference is they don't have bad WEEKS. One bad day means nothing. Letting it spiral means everything. Reset now.`,
+  ],
+  audit: [
+    (rank,streak,hist,tasks) => {
+      const avg = hist.length ? Math.round(hist.reduce((s,h)=>s+h.pct,0)/hist.length) : 0;
+      const wins = hist.filter(h=>h.rr>0).length;
+      const losses = hist.filter(h=>h.rr<0).length;
+      const bestStreak = hist.reduce((best,h,i)=>{ if(h.rr>0) return best+1; return 0; }, 0);
+      return `📊 AUDIT — ${rank}. ${hist.length} days tracked. Win rate: ${hist.length?Math.round(wins/hist.length*100):0}% (${wins}W/${losses}L). Average task completion: ${avg}%. ${avg>=80?'Consistency is elite — now optimize quality of tasks.':avg>=60?'Decent base. Push completion above 80% to accelerate rank gain.':'Sub-60% completion is your main blocker. Fewer tasks done fully beats more tasks done partially.'} Your streak: ${streak} days.`;
+    },
+  ],
+  habit: [
+    (tasks,hist) => {
+      const avg = hist.length ? Math.round(hist.reduce((s,h)=>s+h.pct,0)/hist.length) : 0;
+      const taskList = tasks.map(t=>t.text).slice(0,3).join(', ');
+      return `🔍 HABIT ANALYSIS — Tasks: ${taskList}${tasks.length>3?', and more':''}.  ${avg<60?`Your ${100-avg}% non-completion rate suggests your task list may be too ambitious for your current schedule. Consider cutting 1-2 tasks and doing fewer things with full commitment.`:`Completion rate of ${avg}% is solid. The next level isn't doing MORE — it's doing your current tasks with higher quality and intention.`} Track which specific tasks you skip most — that's the habit gap to close.`;
+    },
+  ],
+  overtime: [
+    (tasks) => `⚡ OVERTIME STRATEGY — Every 5 min past your task timer = +1 RR (max +5 per task). The highest-value tasks to extend are skill-based ones (${tasks.filter(t=>t.cat==='career'||t.cat==='fitness').map(t=>t.text)[0]||'deep work, workout'}). Time extension only pays off when quality is maintained — don't extend just to farm RR. Extend when you're in flow state.`,
+  ],
+  balance: [
+    (tasks) => {
+      const cats = tasks.map(t=>t.cat);
+      const missing = ['fitness','mindset','career','social','finance','creative'].filter(c=>!cats.includes(c));
+      const catNames = {fitness:'Fitness',mindset:'Mental Health',career:'Career',social:'Relationships',finance:'Finance',creative:'Creativity'};
+      return missing.length
+        ? `🧠 LIFE BALANCE — You have ${tasks.length} tasks across ${[...new Set(cats)].length} categories. Missing: ${missing.map(c=>catNames[c]).join(', ')}. Research shows the happiest people invest in at least 4 life dimensions consistently. Consider adding one task from your missing areas — even 15 min/day creates massive long-term impact.`
+        : `🧠 LIFE BALANCE — Excellent. You're covering all 6 life dimensions. Most people optimize 1-2 areas and wonder why they feel unfulfilled. You're playing the full game. Keep this balance as intensity increases.`;
+    },
+  ],
+  recovery: [
+    (rank,hist) => {
+      const recent = hist.slice(0,3);
+      const recentLosses = recent.filter(h=>h.rr<0).length;
+      return `📈 RECOVERY PLAN — ${recentLosses>=2?'You\'re in a losing streak. This is normal — every ranked player experiences this.':''} Step 1: Don\'t change your task list in panic. Step 2: Pick your 2 most impactful tasks and make THOSE your non-negotiables. Step 3: Go to sleep 30 min earlier this week — most slumps are energy problems disguised as motivation problems. ${rank} is not your ceiling. It\'s today\'s floor.`;
+    },
+  ],
+  radiant: [
+    (rank,hist,streak) => {
+      const rIdx = ALL_RANKS.findIndex(r=>r.full===rank);
+      const remaining = RANK_COUNT - rIdx - 1;
+      const avg = hist.length ? hist.reduce((s,h)=>s+(h.rr||0),0)/hist.length : 5;
+      const daysNeeded = avg>0 ? Math.round((remaining*100)/avg) : 999;
+      return `🎯 RADIANT PROJECTION — Currently: ${rank} (${rIdx+1}/${RANK_COUNT}). ${remaining} rank divisions to Radiant. Your average daily RR: ${avg.toFixed(1)}. At this rate: ~${daysNeeded} days (${Math.round(daysNeeded/30)} months). To reach Radiant in 6 months you need +${Math.round((remaining*100)/180)} avg daily RR — achievable with 80%+ task completion daily. ${streak>=7?'Your streak shows you have the consistency. Now optimize completion rate.':'Build a 14-day streak first — that\'s the foundation everything else is built on.'}`;
+    },
+  ],
+};
+
+function getOfflineCoachResponse(type, data) {
+  const { rank, streak, hist, tasks, done, total, rr, promoted } = data;
+  const ALL_RANKS_REF = ALL_RANKS; // closure access
   try {
-    r = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: combined }),
-    });
-    d = await r.json();
-  } catch (err) {
-    throw new Error("Proxy offline — run: node proxy.cjs");
+    switch(type) {
+      case 'start':   return COACH_RESPONSES.start[ri(0,2)](rank,streak,tasks);
+      case 'win':     return COACH_RESPONSES.win[ri(0,2)](rr,done,total,rank,promoted);
+      case 'loss':    return COACH_RESPONSES.loss[ri(0,2)](rr,done,total,rank);
+      case 'audit':   return COACH_RESPONSES.audit[0](rank,streak,hist,tasks);
+      case 'habit':   return COACH_RESPONSES.habit[0](tasks,hist);
+      case 'overtime':return COACH_RESPONSES.overtime[0](tasks);
+      case 'balance': return COACH_RESPONSES.balance[0](tasks);
+      case 'recovery':return COACH_RESPONSES.recovery[0](rank,hist);
+      case 'radiant': return COACH_RESPONSES.radiant[0](rank,hist,streak);
+      default: {
+        // Generic fallback — builds context-aware message from data
+        const avg = hist.length ? Math.round(hist.reduce((s,h)=>s+h.pct,0)/hist.length) : 0;
+        const msgs = [
+          `🎮 ${rank} — ${streak} day streak. Avg completion: ${avg}%. ${avg>=80?'Elite consistency.':avg>=60?'Room to grow.':'Consistency is the unlock.'} Your tasks: ${tasks.slice(0,2).map(t=>t.text).join(', ')}. Execute today.`,
+          `⚡ Real talk: at ${rank} with ${hist.length} days played, your data shows ${avg}% average task completion. ${avg>=70?'That\'s solid — now raise the ceiling.':'That gap between 0% and 100% days is where your rank lives.'}`,
+          `🔥 ${tasks.length} tasks. ${streak} day streak. ${rank}. The grind is real — your data shows it. Stay the course.`,
+        ];
+        return msgs[ri(0,msgs.length-1)];
+      }
+    }
+  } catch(e) {
+    return `🎮 ${rank} — ${streak} day streak. Keep executing your tasks. Consistency is the only cheat code.`;
   }
-  if (d && d.text) return d.text;
-  throw new Error("Empty Gemini response");
+}
+
+function getOfflineTip(task) {
+  const cat = task.cat || 'mindset';
+  const pool = TIPS_DB[cat] || TIPS_DB.mindset;
+  // pick a deterministic but varied tip based on task text hash
+  const hash = task.text.split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  const tip1 = pool[hash % pool.length];
+  const tip2 = pool[(hash+2) % pool.length];
+  return `${tip1}\n\n${tip2}`;
+}
+
+function getOfflineSQReason(sqId, userTasks) {
+  const base = SQ_REASONS_DB[sqId];
+  if (base) return base;
+  return "This side quest builds a complementary habit that reinforces your main task categories — small consistent actions compound into significant life improvements over weeks and months.";
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -311,86 +490,67 @@ export default function App() {
   }
 
   /* ── Fetch bonus mission ── */
-  async function fetchBonus(sq) {
-    try {
-      const txt = await callAI(
-        "Respond ONLY with valid JSON. No markdown or backticks.",
-        `Create a daily bonus mission for a Valorant-themed life-improvement app. JSON: {"title":"short name","description":"one sentence task","bonusRR":12,"tip":"short motivational quote"}`
-      );
-      const m = JSON.parse(txt.replace(/```json|```/g,"").trim());
-      setBonusMission(m); LS.patch({bonusMission:m});
-    } catch {
-      const m={title:"Iron Will Protocol",description:"Do one meaningful thing today your future self will thank you for.",bonusRR:12,tip:"Discipline is choosing between what you want now and what you want most."};
-      setBonusMission(m); LS.patch({bonusMission:m});
-    }
+  /* ── Bonus mission — picked from offline pool ── */
+  function fetchBonus(sq) {
+    const m = BONUS_MISSIONS[ri(0, BONUS_MISSIONS.length-1)];
+    setBonusMission(m); LS.patch({bonusMission:m});
   }
 
-  /* ── Pick side quests ── */
+  /* ── Pick side quests — prefer user's categories ── */
   function pickSQ(myTasks) {
-    // Prefer quests that match the user's task categories
     const userCats = [...new Set((myTasks||tasks).map(t=>t.cat))];
-    const scored = SQ_POOL.map(q=>({...q, score: userCats.includes(q.cat)?2:0+Math.random()}));
+    const scored = SQ_POOL.map(q=>({...q, score:(userCats.includes(q.cat)?2:0)+Math.random()}));
     const sq = scored.sort((a,b)=>b.score-a.score).slice(0,3);
     setSideQuests(sq); LS.patch({sideQuests:sq});
   }
 
-  /* ── Generate AI tip for one task ── */
-  async function getTip(taskId) {
+  /* ── Task tip — instant offline ── */
+  function getTip(taskId) {
     const t = tasks.find(x=>x.id===taskId);
     if (!t || taskTips[taskId]) return;
     setTipsLoading(p=>({...p,[taskId]:true}));
-    try {
-      const cat = CATS.find(c=>c.id===t.cat);
-      const msg = await callAI(
-        `You are an expert life coach and ${cat?.name||"personal development"} specialist. Give sharp, specific, actionable advice. Max 60 words. No fluff.`,
-        `The user has a daily task: "${t.text}" (category: ${cat?.name||t.cat}, duration: ${t.mins||30} min). Give them 2-3 specific tips on how to maximize results from this exact task. Be concrete, not generic.`
-      );
-      const tips = {...taskTips,[taskId]:msg};
-      setTaskTips(tips); LS.patch({taskTips:tips});
-    } catch { /* silent fail */ }
+    const msg = getOfflineTip(t);
+    const tips = {...taskTips,[taskId]:msg};
+    setTaskTips(tips); LS.patch({taskTips:tips});
     setTipsLoading(p=>({...p,[taskId]:false}));
   }
 
-  /* ── Generate AI reason for side quest ── */
-  async function getSQReason(sqId) {
+  /* ── Side quest reason — instant offline ── */
+  function getSQReason(sqId) {
     const q = sideQuests.find(x=>x.id===sqId)||SQ_POOL.find(x=>x.id===sqId);
     if (!q || sqReasons[sqId]) return;
-    setTipsLoading(p=>({...p,[sqId]:true}));
-    try {
-      const userCats = [...new Set(tasks.map(t=>t.cat))].join(", ");
-      const msg = await callAI(
-        "You are a life optimization coach. Be direct and specific. Max 50 words.",
-        `Side quest: "${q.text}". The user's main focus areas are: ${userCats}. Explain in 2 sentences why this side quest is specifically beneficial for them given their focus areas.`
-      );
-      const reasons = {...sqReasons,[sqId]:msg};
-      setSqReasons(reasons); LS.patch({sqReasons:reasons});
-    } catch { /* silent fail */ }
-    setTipsLoading(p=>({...p,[sqId]:false}));
+    const msg = getOfflineSQReason(sqId, tasks);
+    const reasons = {...sqReasons,[sqId]:msg};
+    setSqReasons(reasons); LS.patch({sqReasons:reasons});
   }
 
   /* ── Generate tips for all tasks on day start ── */
-  async function generateAllTips(myTasks, mySQ) {
-    for (const t of myTasks) {
-      if (!taskTips[t.id]) await getTip(t.id).catch(()=>{});
-    }
-    for (const q of (mySQ||[])) {
-      if (!sqReasons[q.id]) await getSQReason(q.id).catch(()=>{});
-    }
+  function generateAllTips(myTasks, mySQ) {
+    (myTasks||[]).forEach(t=>{ if(!taskTips[t.id]){ const msg=getOfflineTip(t); setTaskTips(p=>({...p,[t.id]:msg})); }});
+    (mySQ||[]).forEach(q=>{ if(!sqReasons[q.id]){ const msg=getOfflineSQReason(q.id,myTasks||tasks); setSqReasons(p=>({...p,[q.id]:msg})); }});
+    LS.patch({taskTips:{...taskTips}, sqReasons:{...sqReasons}});
   }
 
-  /* ── Coach AI ── */
-  async function runCoach(ctx, rIdx=rankIdx, sd=streakDays, hist=history, myTasks=tasks) {
+  /* ── Coach — instant, data-driven, offline ── */
+  function runCoach(ctx, rIdx=rankIdx, sd=streakDays, hist=history, myTasks=tasks) {
     setAiLoading(true);
-    const done = myTasks.filter(t=>doneTasks[t.id]).length;
-    const taskList = myTasks.map(t=>t.text).join(", ");
-    const sys = `You are an elite Valorant-style life coach AI. Intense, data-driven, direct, gaming lingo. Max 100 words. Rank: ${ALL_RANKS[rIdx].full}. Streak: ${sd} days. Tasks: ${taskList}. Completed today: ${done}/${myTasks.length}. Last 5 days: ${JSON.stringify(hist.slice(0,5))}. Difficulty: ×${DIFF[tIdx].toFixed(1)}.`;
-    try {
-      const msg = await callAI(sys, ctx);
-      setAiMsg(msg); LS.patch({aiMsg:msg});
-    } catch {
-      const fb=["Network timeout — execute anyway. Your tasks are waiting.","AI offline. You know what to do. Lock in.","Connection failed. Grind doesn't stop."];
-      setAiMsg(fb[ri(0,2)]);
-    }
+    const done   = myTasks.filter(t=>doneTasks[t.id]).length;
+    const rank   = ALL_RANKS[rIdx].full;
+    const rr     = hist[0]?.rr||0;
+    const promoted = hist[0] && hist[0].from!==hist[0].to && hist[0].rr>0;
+    // Detect context type from the message
+    let type = 'default';
+    if (ctx.includes('started') || ctx.includes('Hype'))           type = 'start';
+    else if (ctx.includes('Gained') && parseInt(ctx)>=0)           type = 'win';
+    else if (ctx.includes('Lost') || ctx.includes('bad'))          type = 'loss';
+    else if (ctx.includes('patterns') || ctx.includes('Analyze'))  type = 'audit';
+    else if (ctx.includes('habit') || ctx.includes('Habit'))       type = 'habit';
+    else if (ctx.includes('overtime') || ctx.includes('Overtime')) type = 'overtime';
+    else if (ctx.includes('neglect') || ctx.includes('balance') || ctx.includes('Balance')) type = 'balance';
+    else if (ctx.includes('bounce') || ctx.includes('Recovery') || ctx.includes('losing streak')) type = 'recovery';
+    else if (ctx.includes('Radiant') || ctx.includes('pace'))      type = 'radiant';
+    const msg = getOfflineCoachResponse(type, {rank,streak:sd,hist,tasks:myTasks,done,total:myTasks.length,rr,promoted});
+    setAiMsg(msg); LS.patch({aiMsg:msg});
     setAiLoading(false);
   }
 
